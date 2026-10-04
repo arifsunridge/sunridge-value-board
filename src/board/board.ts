@@ -1,7 +1,10 @@
 import {
+  DOCUMENT_KINDS,
+  DOCUMENT_STATUSES,
   HIGH_SHARE_WARNING,
   NOW_CAP,
   PRIORITIES,
+  STATUSES,
   STATUS_LABELS,
   isDepartmentId,
   isOpen,
@@ -233,6 +236,7 @@ export class Board {
     );
     if (!PRIORITIES.includes(input.priority)) throw new BoardError("invalid", "Choose High, Medium or Low.");
     const status = input.status ?? "next";
+    checkStatus(status);
     const note = cleanNote(input.note);
     if (status === "blocked" && !note) {
       throw new BoardError("waiting_on_required", "Say what this Task is waiting on.");
@@ -294,6 +298,7 @@ export class Board {
 
   /** Change Status, and optionally the Department or Area, within the same Company. */
   async moveTask(actor: Actor, id: string, move: Move): Promise<Task> {
+    checkStatus(move.status);
     const before = await this.requireEditable(actor, id);
     const after: Task = { ...before, status: move.status };
     if (move.departmentId !== undefined || move.areaId !== undefined) {
@@ -354,6 +359,8 @@ export class Board {
 
   async addDocument(actor: Actor, taskId: string, input: NewDocument): Promise<Document> {
     const task = await this.requireEditable(actor, taskId);
+    if (!DOCUMENT_KINDS.includes(input.kind)) throw new BoardError("invalid", "A Document is a File, a Link or Claude work.");
+    checkDocumentStatus(input.status ?? "draft");
     const doc: Document = {
       id: this.newId(),
       taskId,
@@ -380,7 +387,7 @@ export class Board {
     const { doc, task } = await this.requireEditableDocument(actor, id);
     const after: Document = { ...doc };
     if (changes.name !== undefined) after.name = cleanName(changes.name, "A Document");
-    if (changes.status !== undefined) after.status = changes.status;
+    if (changes.status !== undefined) after.status = checkDocumentStatus(changes.status);
     const entries = (["name", "status"] as const)
       .filter((f) => after[f] !== doc[f])
       .map((f) => this.entry(actor, task, "document", id, "changed", f, doc[f], after[f]));
@@ -652,6 +659,15 @@ export class Board {
     if (!area) throw new BoardError("not_found", "That Area isn't on the board.");
     return area;
   }
+}
+
+function checkStatus(status: Status): void {
+  if (!STATUSES.includes(status)) throw new BoardError("invalid", "Choose Next, Now, Blocked or Done.");
+}
+
+function checkDocumentStatus(status: DocumentStatus): DocumentStatus {
+  if (!DOCUMENT_STATUSES.includes(status)) throw new BoardError("invalid", "Choose Draft, In review or Final.");
+  return status;
 }
 
 export function canEdit(task: Task, memberId: string): boolean {

@@ -34,6 +34,10 @@ export class ListsStore implements Store {
   async listCompanies() {
     return (await this.read<Company>("companies")).sort((a, b) => a.order - b.order);
   }
+  /** Companies are added by the provisioning script, not from the board. */
+  async putCompany(company: Company) {
+    await this.put("companies", company);
+  }
 
   async listAreas(companyId: string) {
     return this.read<Area>("areas", `fields/CompanyId eq ${quote(companyId)}`);

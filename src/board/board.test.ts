@@ -231,6 +231,13 @@ describe("Documents", () => {
     expect((await board.board("c-hbf")).documentCounts["t-5"]).toBe(1);
   });
 
+  it("refuses values that aren't on the lists, even from a hand-made request", async () => {
+    await expectError(board.moveTask(theran, "t-2", { status: "archived" as never }), "invalid");
+    await expectError(board.addDocument(theran, "t-5", { kind: "video" as never, name: "Clip", url: "https://example.com" }), "invalid");
+    const doc = await board.addDocument(theran, "t-5", { kind: "link", name: "Note", url: "https://example.com" });
+    await expectError(board.updateDocument(theran, doc.id, { status: "approved" as never }), "invalid");
+  });
+
   it("only accepts https links", async () => {
     await expectError(board.addDocument(theran, "t-5", { kind: "link", name: "Old site", url: "http://example.com" }), "invalid");
   });
