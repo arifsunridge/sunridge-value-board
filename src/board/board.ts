@@ -38,6 +38,8 @@ export interface NewTask {
   contributorIds?: string[];
   due?: string | null;
   note?: string | null;
+  /** Where a Task came from, kept in its first Trail entry, e.g. "Meeting notes, 2 Oct". */
+  source?: string;
 }
 
 export interface TaskChanges {
@@ -163,6 +165,17 @@ export class Board {
     return { task, documents, trail: visibleTrail(trail) };
   }
 
+  async document(id: string): Promise<Document> {
+    const doc = await this.store.getDocument(id);
+    if (!doc) throw new BoardError("not_found", "That Document isn't on the board.");
+    return doc;
+  }
+
+  /** Throws unless the actor may change this Task. Used before side effects outside the board, such as uploads. */
+  async checkCanEdit(actor: Actor, taskId: string): Promise<Task> {
+    return this.requireEditable(actor, taskId);
+  }
+
   /** Tasks a Member owns or contributes to, across every Company. */
   async myTasks(memberId: string): Promise<Task[]> {
     const tasks = await this.store.listTasks({});
@@ -244,8 +257,9 @@ export class Board {
       createdBy: actor.memberId,
       updatedAt: now,
     };
-    await this.commit([this.entry(actor, task, "task", task.id, "created", null, null, task.title)], () =>
-      this.store.putTask(task),
+    await this.commit(
+      [this.entry(actor, task, "task", task.id, "created", null, input.source?.slice(0, 120) ?? null, task.title)],
+      () => this.store.putTask(task),
     );
     return task;
   }

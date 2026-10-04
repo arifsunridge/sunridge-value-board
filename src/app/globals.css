@@ -1,0 +1,524 @@
+@import "@fontsource/figtree/400.css";
+@import "@fontsource/figtree/500.css";
+@import "@fontsource/figtree/600.css";
+@import "@fontsource/libre-baskerville/400.css";
+@import "@fontsource/libre-baskerville/700.css";
+
+/* Sunridge house style. Square corners, no shadows, no gradients. */
+:root {
+  --white: #ffffff;
+  --olive: #61664e;
+  --olive-dark: #535349;
+  --gold: #d8a45f; /* accent only */
+  --sage: #abbea9;
+  --sage-light: #dde5dc;
+  --ink: #2d2d2d;
+  --grey: #6f6f6f;
+
+  --high: #b5543c;
+  --medium: #d8a45f;
+  --low: #abbea9;
+
+  --title: "Libre Baskerville", Georgia, serif;
+  --text: "Figtree", system-ui, sans-serif;
+
+  --gutter: 16px;
+  --rule: 1px solid var(--sage-light);
+}
+
+* {
+  box-sizing: border-box;
+  border-radius: 0;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--white);
+  color: var(--ink);
+  font-family: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--title);
+  font-weight: 400;
+  color: var(--olive-dark);
+  margin: 0 0 8px;
+}
+h1 {
+  font-size: 22px;
+}
+h2 {
+  font-size: 18px;
+}
+h3 {
+  font-size: 15px;
+}
+
+a {
+  color: var(--olive);
+}
+
+.muted {
+  color: var(--grey);
+}
+.small {
+  font-size: 13px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---------- frame ---------- */
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+  padding: 12px var(--gutter);
+  border-bottom: var(--rule);
+}
+.brand {
+  font-family: var(--title);
+  color: var(--olive-dark);
+  font-size: 17px;
+  text-decoration: none;
+}
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  flex: 1;
+}
+.nav a {
+  color: var(--ink);
+  text-decoration: none;
+  padding: 4px 0;
+  border-bottom: 2px solid transparent;
+}
+.nav a[aria-current="page"] {
+  border-bottom-color: var(--gold);
+}
+.who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--grey);
+  font-size: 13px;
+}
+
+main {
+  padding: 16px var(--gutter) 48px;
+}
+main.narrow {
+  max-width: 560px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.toolbar .spacer {
+  flex: 1;
+}
+
+.banner {
+  border: 1px solid var(--gold);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.banner.error {
+  border-color: var(--high);
+}
+
+/* ---------- controls ---------- */
+
+.button {
+  font: inherit;
+  font-weight: 500;
+  border: 1px solid var(--olive);
+  background: var(--olive);
+  color: var(--white);
+  padding: 6px 12px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+.button.secondary {
+  background: var(--white);
+  color: var(--olive);
+}
+.button.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--olive);
+  padding: 6px 4px;
+}
+.button.danger {
+  background: var(--white);
+  color: var(--high);
+  border-color: var(--high);
+}
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+.card:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 1px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid var(--sage);
+  background: var(--white);
+  color: var(--ink);
+  padding: 3px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.chip[aria-pressed="true"],
+.chip[aria-current="page"] {
+  background: var(--sage-light);
+  border-color: var(--olive);
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--grey);
+  margin-bottom: 4px;
+}
+input[type="text"],
+input[type="url"],
+input[type="date"],
+input[type="search"],
+select,
+textarea {
+  font: inherit;
+  width: 100%;
+  border: 1px solid var(--sage);
+  padding: 6px 8px;
+  background: var(--white);
+  color: var(--ink);
+}
+textarea {
+  resize: vertical;
+}
+fieldset {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+.field {
+  margin-bottom: 14px;
+}
+.hint {
+  font-size: 12px;
+  color: var(--grey);
+  margin-top: 4px;
+}
+.hint.warn {
+  color: var(--olive-dark);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ---------- priority ---------- */
+
+.priority-high {
+  --p: var(--high);
+}
+.priority-medium {
+  --p: var(--medium);
+}
+.priority-low {
+  --p: var(--low);
+}
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  background: var(--p);
+  margin-right: 6px;
+}
+.priority-choice {
+  display: flex;
+  gap: 6px;
+}
+.priority-choice label {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--sage);
+  padding: 4px 10px;
+  color: var(--ink);
+  font-size: 14px;
+  margin: 0;
+  cursor: pointer;
+}
+.priority-choice input {
+  position: absolute;
+  opacity: 0;
+}
+.priority-choice label:has(input:checked) {
+  border-color: var(--olive);
+  background: var(--sage-light);
+}
+.priority-choice label:has(input:focus-visible) {
+  outline: 2px solid var(--gold);
+}
+
+/* ---------- board ---------- */
+
+.board {
+  overflow-x: auto;
+  /* Contains absolutely positioned screen-reader text, so it can't widen the page. */
+  position: relative;
+}
+.grid {
+  min-width: 860px;
+}
+.grid-head,
+.grid-row {
+  display: grid;
+  grid-template-columns: 170px repeat(4, minmax(160px, 1fr));
+}
+.grid-head {
+  position: sticky;
+  top: 0;
+  background: var(--white);
+  z-index: 1;
+  border-bottom: 1px solid var(--olive);
+}
+.grid-head div {
+  padding: 6px 8px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--olive-dark);
+}
+.department {
+  border-bottom: var(--rule);
+}
+.department > summary {
+  cursor: pointer;
+  padding: 10px 0 6px;
+  list-style: none;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.department > summary::-webkit-details-marker {
+  display: none;
+}
+.department > summary::before {
+  content: "▸";
+  color: var(--olive);
+  font-size: 12px;
+}
+.department[open] > summary::before {
+  content: "▾";
+}
+.department > summary h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.area-label {
+  padding: 8px 8px 8px 0;
+  font-size: 13px;
+  color: var(--grey);
+  border-top: var(--rule);
+}
+.cell {
+  border-top: var(--rule);
+  border-left: var(--rule);
+  min-height: 56px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cell.over {
+  background: var(--sage-light);
+}
+.cell .show-done {
+  font-size: 12px;
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--sage-light);
+  border-left: 4px solid var(--p);
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  width: 100%;
+  display: block;
+  touch-action: manipulation;
+  position: relative;
+}
+.card.dragging {
+  opacity: 0.4;
+}
+.card .title {
+  font-size: 14px;
+  font-weight: 500;
+}
+.card .meta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--grey);
+  margin-top: 2px;
+}
+.card .late {
+  color: var(--high);
+}
+.card .waiting {
+  font-size: 12px;
+  color: var(--olive-dark);
+  margin-top: 2px;
+}
+.card.done .title {
+  color: var(--grey);
+}
+
+/* ---------- panel ---------- */
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(45, 45, 45, 0.25);
+  z-index: 10;
+}
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 100vw);
+  background: var(--white);
+  border-left: 1px solid var(--olive);
+  z-index: 11;
+  overflow-y: auto;
+  padding: 16px var(--gutter) 48px;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.panel details {
+  border-top: var(--rule);
+  padding: 8px 0;
+}
+.panel details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--olive-dark);
+}
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.people label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  font-size: 14px;
+  margin: 0;
+}
+
+.doc {
+  border-top: var(--rule);
+  padding: 8px 0;
+}
+.doc .row {
+  justify-content: space-between;
+}
+
+.trail {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.trail li {
+  padding: 4px 0;
+  border-bottom: var(--rule);
+}
+
+dialog {
+  border: 1px solid var(--olive);
+  padding: 16px;
+  max-width: min(420px, calc(100vw - 32px));
+}
+dialog::backdrop {
+  background: rgba(45, 45, 45, 0.25);
+}
+
+/* ---------- lists (Summary, My Tasks) ---------- */
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 20px;
+}
+.list li {
+  position: relative;
+  border-left: 4px solid var(--p, var(--sage-light));
+  border-bottom: var(--rule);
+  padding: 8px 10px;
+}
+.list .meta {
+  font-size: 13px;
+  color: var(--grey);
+}
+section {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 640px) {
+  .grid-head,
+  .grid-row {
+    grid-template-columns: 120px repeat(4, minmax(150px, 1fr));
+  }
+}
