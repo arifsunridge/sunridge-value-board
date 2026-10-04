@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # The app writes board data under its own identity; Members can only read the site
