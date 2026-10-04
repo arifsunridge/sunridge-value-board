@@ -17,6 +17,8 @@ services:
         value: lists
       - key: CAPTURE_ENABLED
         value: "false" # switch on once spec question Q1 is answered
+      - key: CLAUDE_ACCESS_ENABLED
+        value: "false" # switch on once spec question Q1 is answered (docs/setup.md, section 7)
       - key: SESSION_SECRET
         generateValue: true
       - key: APP_BASE_URL

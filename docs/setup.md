@@ -51,3 +51,38 @@ npm run import -- apply private/review.json --as <your member id>
 ## 6. Capture
 
 Leave `CAPTURE_ENABLED=false` until Partners and IT answer spec question Q1. Then set `ANTHROPIC_API_KEY` and `CAPTURE_ENABLED=true`.
+
+## 7. Claude access (P1)
+
+Lets Members read and change the board from Claude chat or Claude Code, as themselves, under the same rules as the screen ([ADR 0004](adr/0004-claude-endpoint-address-is-the-app-id.md)). Leave `CLAUDE_ACCESS_ENABLED=false` until spec question Q1 is answered.
+
+**Domain (IT).** Give the board a custom domain verified in Microsoft 365, for example `board.sunridgepartners.com`, and add it to the Render service. Set `APP_BASE_URL` to it.
+
+**The board's app registration (IT).**
+
+1. Expose an API → Application ID URI: `https://<board domain>/mcp`. It must match exactly, with no trailing slash.
+2. Add a scope: `Board.ReadWrite`, "Read and change the Value Board as you". Who can consent: admins and users.
+3. Manifest: set `requestedAccessTokenVersion` (shown as `accessTokenAcceptedVersion` in older manifests) to `2`.
+
+**A client app for Claude (IT).** Register a second app, "Sunridge Value Board for Claude", single tenant:
+
+1. API permissions: the board's `Board.ReadWrite`, with admin consent.
+2. Web redirect URI `https://claude.ai/api/mcp/auth_callback`, plus a client secret for claude.ai.
+3. Mobile and desktop redirect URIs `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code. Allow public client flows, so Claude Code needs no secret.
+
+**claude.ai (an Owner of Sunridge's Claude organisation).** Organization settings → Connectors → Add custom connector. URL: `https://<board domain>/mcp`. Advanced settings → use your own OAuth client: the Claude client app's ID and secret.
+
+**Claude Code (each Member).**
+
+```
+claude mcp add --transport http --client-id <Claude client app ID> --callback-port 8765 \
+  sunridge-board https://<board domain>/mcp
+```
+
+Then run `/mcp` in Claude Code to sign in with your Microsoft account.
+
+**Trying it locally.** With `AUTH_MODE=dev` and `CLAUDE_ACCESS_ENABLED=true` in `.env`:
+
+```
+claude mcp add --transport http --header "Authorization: Bearer dev:m-theran" sunridge-board-local http://localhost:3000/mcp
+```

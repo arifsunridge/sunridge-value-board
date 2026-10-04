@@ -16,6 +16,7 @@ const schema = z
     ENTRA_CERT_PRIVATE_KEY: z.string().optional(),
     SHAREPOINT_SITE_ID: z.string().optional(),
     CAPTURE_ENABLED: z.enum(["true", "false"]).default("false"),
+    CLAUDE_ACCESS_ENABLED: z.enum(["true", "false"]).default("false"),
     ANTHROPIC_API_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
@@ -30,6 +31,9 @@ const schema = z
     if (env.AUTH_MODE === "entra") need(["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CLIENT_SECRET"], "for Microsoft sign-in");
     if (env.STORE === "lists") need(["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID", "ENTRA_CERT_THUMBPRINT_SHA256", "SHAREPOINT_SITE_ID"], "for Microsoft Lists");
     if (env.CAPTURE_ENABLED === "true") need(["ANTHROPIC_API_KEY"], "for Capture");
+    if (env.CLAUDE_ACCESS_ENABLED === "true" && env.AUTH_MODE === "entra") {
+      need(["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID"], "for Claude access");
+    }
   });
 
 export type Config = z.infer<typeof schema>;
