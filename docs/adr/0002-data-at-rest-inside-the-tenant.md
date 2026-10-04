@@ -1,6 +1,6 @@
 # Data at rest stays in the Sunridge tenant; Render only runs the app
 
-All board data is stored inside the Sunridge Microsoft 365 tenant. Tasks, Areas and trails go in Microsoft Lists on a Sunridge SharePoint site, and files go in each Company's SharePoint document library. The app itself runs on Render as part of the HBF Portal, but stores nothing there. It reads and writes as the signed-in Member, so SharePoint permissions still apply. We picked this over a Render-hosted database, which is easier to build and query, because confidentiality comes first and this costs nothing extra at our scale.
+All board data is stored inside the Sunridge Microsoft 365 tenant. Tasks, Areas and trails go in Microsoft Lists on a Sunridge SharePoint site, and files go in each Company's SharePoint document library. The app itself runs on Render as part of the HBF Portal, but stores nothing there. How it reads and writes is set by [ADR 0003](0003-app-identity-writes-board-data.md), which replaced the earlier "as the signed-in Member" approach. We picked this over a Render-hosted database, which is easier to build and query, because confidentiality comes first and this costs nothing extra at our scale.
 
 ## Considered options
 
