@@ -1,0 +1,37 @@
+# Render Blueprint for the board (tech-stack.md). Secrets are set in the Render dashboard, never here.
+services:
+  - type: web
+    name: sunridge-value-board
+    runtime: node
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /signed-out
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_MODE
+        value: entra
+      - key: STORE
+        value: lists
+      - key: CAPTURE_ENABLED
+        value: "false" # switch on once spec question Q1 is answered
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: APP_BASE_URL
+        sync: false
+      - key: ENTRA_TENANT_ID
+        sync: false
+      - key: ENTRA_CLIENT_ID
+        sync: false
+      - key: ENTRA_CLIENT_SECRET
+        sync: false
+      - key: ENTRA_CERT_THUMBPRINT_SHA256
+        sync: false
+      - key: ENTRA_CERT_PRIVATE_KEY
+        sync: false
+      - key: SHAREPOINT_SITE_ID
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
