@@ -6,7 +6,7 @@ A board for the Sunridge Value Creation and Investment team to track whether eac
 - [docs/spec.md](docs/spec.md): the spec for v1–v3 (approved)
 - [docs/tech-stack.md](docs/tech-stack.md): the tech stack (approved)
 - [docs/adr/](docs/adr/): decisions that are hard to reverse
-- [docs/setup.md](docs/setup.md): SharePoint, Microsoft sign-in, Render and the prototype import
+- [docs/setup.md](docs/setup.md): SharePoint, Microsoft sign-in, Render, the prototype import and Claude access
 
 ## Working on it
 
