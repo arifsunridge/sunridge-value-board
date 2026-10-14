@@ -6,16 +6,17 @@ Steps marked **Arif** need the Cloudflare, Render or portal admin accounts.
 
 ## 1. Database (Arif)
 
-On the Render MySQL that holds the portal's database (never the live HBF database; the board refuses `hbroch.com` hosts):
+On `hbf-mysql`, the Render MySQL that holds the portal's database (never the live HBF database; the board refuses `hbroch.com` hosts). Render's private network is per region, so the board runs in **Oregon**, like `hbf-mysql`.
 
-1. Create the database: `CREATE DATABASE value_board;`
-2. Create the tables once, with an admin login:
+Easiest, once the Render service exists (section 3): add a temporary variable `DB_ADMIN_PASSWORD` to the service (the value of `MYSQL_ROOT_PASSWORD` on `hbf-mysql`), then in Render → `sunridge-value-board` → Jobs, run:
 
-   ```
-   DB_HOST=<render mysql host> DB_USER=<admin> DB_PASSWORD=... DB_NAME=value_board npm run db:init
-   ```
+```
+DB_APP_PASSWORD="$DB_PASSWORD" DB_USER=root DB_PASSWORD="$DB_ADMIN_PASSWORD" npm run db:init
+```
 
-3. Run the `CREATE USER` and `GRANT` lines it prints, with a long random password. The board's own login can add to the Trail but never change or delete it. That is what keeps the Trail append-only (ADR 0006).
+It creates the `value_board` database and tables and the board's own login `value_board` with the password already in the service's `DB_PASSWORD` (at least 24 characters). Then delete `DB_ADMIN_PASSWORD` from the service and redeploy. Running it again is safe.
+
+The board's login can add to the Trail but never change or delete it. That is what keeps the Trail append-only (ADR 0006). Without `DB_APP_PASSWORD`, `db:init` prints the `CREATE USER` and `GRANT` statements instead.
 
 ## 2. Portal (Arif, as portal admin)
 
@@ -27,8 +28,8 @@ The portal change that goes with this board (`hbf-portal`, branch `claude/vibran
 
 ## 3. Render and Cloudflare (Arif)
 
-1. Render: New → Web Service from this repository, or a Blueprint with `render.yaml`. Fill in the `sync: false` values:
-   - `DB_HOST`, `DB_PASSWORD`: the board's own login from step 1.
+1. Render: New → Web Service from this repository (region Oregon), or a Blueprint with `render.yaml`. Fill in the `sync: false` values:
+   - `DB_HOST`: the same as Materials Planning's. `DB_PASSWORD`: a new random password of at least 24 characters, used by section 1.
    - `PORTAL_INTERNAL_URL`, `PORTAL_SERVICE_TOKEN`: the same as the other portal apps.
    - `CF_ACCESS_TEAM_DOMAIN`: `sunridgeportal.cloudflareaccess.com`.
    - `CF_ACCESS_AUD`: from step 3 below.

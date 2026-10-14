@@ -5,9 +5,9 @@ services:
   - type: web
     name: sunridge-value-board
     runtime: node
-    region: frankfurt
+    region: oregon # same region as hbf-mysql: Render private networking is per region
     plan: starter
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build # Render sets NODE_ENV=production; the build and db:init need dev tools
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:

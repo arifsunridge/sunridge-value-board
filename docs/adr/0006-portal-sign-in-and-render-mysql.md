@@ -16,7 +16,7 @@ We chose this over keeping Microsoft Lists in the Sunridge tenant (ADR 0002 and 
 
 ## Consequences
 
-- Task, Area, Document and Trail content is now stored on Render (Frankfurt), outside the Sunridge tenant. Files still live in SharePoint; the board keeps links only.
+- Task, Area, Document and Trail content is now stored on Render in Oregon (US), next to the portal's MySQL, outside the Sunridge tenant. Files still live in SharePoint; the board keeps links only.
 - The board writes the Trail first and the change second, as before. The database user may only INSERT and SELECT on the Trail table, so the Trail stays append-only even for the app.
 - Logs carry error names and HTTP status only, as before (ADR 0002's logging rule stands).
 - A Person's id is the lower-cased email the portal verified, matching the portal's "one email, one account".
