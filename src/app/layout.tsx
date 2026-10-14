@@ -24,7 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </Link>
           {me && (
             <>
-              <Nav companies={companies.map((c) => ({ id: c.id, name: c.name }))} />
+              <Nav companies={companies.map((c) => ({ id: c.id, name: c.name }))} canImport={me.kind === "member"} />
               <div className="who">
                 <span>{me.name}</span>
                 {portalUrl && (

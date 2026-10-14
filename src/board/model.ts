@@ -37,8 +37,8 @@ export const TITLE_MAX_WORDS = 8;
 export const NOTE_MAX_CHARS = 200;
 export const NOTE_MAX_LINES = 2;
 
-/** A Member works at Sunridge; a Manager works at a portfolio company (ADR 0005). */
-export type PersonKind = "member" | "manager";
+/** A Member works at Sunridge (portal role "Sunridge team"); a company kind is in a portfolio company's Company team, such as the HBF team (ADR 0005). */
+export type PersonKind = "member" | "company";
 
 export interface Person {
   /** The lower-cased email the HBF Portal verified (ADR 0006). */
@@ -46,7 +46,7 @@ export interface Person {
   name: string;
   email: string;
   kind: PersonKind;
-  /** A Manager's Company. Always null for a Member. */
+  /** The Company whose team this Person is in. Always null for a Member. */
   companyId: string | null;
 }
 
@@ -83,7 +83,7 @@ export interface Task {
   /** ISO date, YYYY-MM-DD. */
   due: string | null;
   note: string;
-  /** Visible to the Company's Managers (ADR 0005). Off unless a Member turns it on. */
+  /** Visible to the Company team (ADR 0005). Off unless a Member turns it on. */
   shared: boolean;
   removed: boolean;
   /** v2: the Lever this Task supports. Always null in v1. */
@@ -142,7 +142,7 @@ export function canBeShared(departmentId: DepartmentId): boolean {
   return !NEVER_SHARED.includes(departmentId);
 }
 
-/** Whether this Person may see this Task at all. Members see everything; Managers see their Company's Shared Tasks. */
+/** Whether this Person may see this Task at all. Members see everything; a Company team sees its Company's Shared Tasks. */
 export function canSee(person: Person, task: Task): boolean {
   if (isMember(person)) return true;
   return task.shared && !task.removed && task.companyId === person.companyId && canBeShared(task.departmentId);

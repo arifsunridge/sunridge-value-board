@@ -17,7 +17,7 @@ export default async function SummaryPage({ params }: { params: Promise<{ compan
     <main>
       <div className="toolbar">
         <h1 style={{ margin: 0 }}>{summary.company.name}: summary</h1>
-        <CompanyViews companyId={companyId} current="/summary" isManager={me.kind === "manager"} />
+        <CompanyViews companyId={companyId} current="/summary" isCompanyTeam={me.kind === "company"} />
       </div>
 
       <section>

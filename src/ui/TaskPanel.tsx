@@ -49,8 +49,8 @@ interface Props {
   areas: Area[];
   members: Person[];
   meId: string;
-  /** Members keep everything; a Manager changes only a few fields of their own Shared Tasks (ADR 0005). */
-  isManager: boolean;
+  /** Members keep everything; the Company team changes only a few fields of their own Shared Tasks (ADR 0005). */
+  isCompanyTeam: boolean;
 }
 
 type Result = Awaited<ReturnType<typeof actions.updateTask>>;
@@ -96,7 +96,7 @@ export function TaskPanel(props: Props) {
 
 // ---------- shared fields ----------
 
-/** Members, plus this company's Managers when the Task is Shared. */
+/** Members, plus this company's team when the Task is Shared. */
 function eligible(members: Person[], companyId: string, shared: boolean): Person[] {
   return members.filter((p) => p.kind === "member" || (shared && p.companyId === companyId));
 }
@@ -108,11 +108,11 @@ function SharedField({ company, departmentId, value, onChange }: { company: Comp
     <div className="field">
       <label className="check">
         <input type="checkbox" checked={value && allowed} disabled={!allowed} onChange={(e) => onChange(e.target.checked)} />
-        Share with {company.name}’s managers
+        Share with the {company.name} team
       </label>
       <div className="hint">
         {allowed
-          ? `${company.name}’s managers in the portal will see this Task, and can own or help on it.`
+          ? `The ${company.name} team in the portal will see this Task, and can own or help on it.`
           : "Talent & organisation and Finance are never shared."}
       </div>
     </div>
@@ -310,7 +310,7 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
 // ---------- edit ----------
 
 function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> }) {
-  const { data, members, areas, companies, company, isManager } = props;
+  const { data, members, areas, companies, company, isCompanyTeam } = props;
   const { task } = data;
   const [title, setTitle] = useState(task.title);
   const [priority, setPriority] = useState(task.priority);
@@ -326,8 +326,8 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
   const join = useAction();
   const share = useAction();
   const disabled = !data.canEdit;
-  // A Manager may change the title, due date, note and Status of their own Tasks; the rest stays with Sunridge.
-  const sunridgeOnly = disabled || isManager;
+  // The Company team may change the title, due date, note and Status of their own Tasks; the rest stays with Sunridge.
+  const sunridgeOnly = disabled || isCompanyTeam;
   const people = eligible(members, task.companyId, task.shared);
   const names = Object.fromEntries([...companies.map((c) => [c.id, c.name]), ...data.allAreas.map((a) => [a.id, a.name])]);
 
@@ -349,7 +349,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
       {disabled && (
         <div className="banner">
           You’re viewing this Task. Only its Owners and Contributors can change it.
-          {!isManager && (
+          {!isCompanyTeam && (
             <div style={{ marginTop: 8 }}>
               <button className="button secondary" disabled={join.pending} onClick={() => join.run(() => actions.joinTask(task.id))}>
                 Join as a Contributor
@@ -359,12 +359,12 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
           <ErrorBanner message={join.error} />
         </div>
       )}
-      {isManager && !disabled && (
+      {isCompanyTeam && !disabled && (
         <p className="banner">Sunridge shared this Task with you. You can change its title, Status, due date and note, and add links.</p>
       )}
-      {!isManager && company.kind === "portfolio" && (
+      {!isCompanyTeam && company.kind === "portfolio" && (
         <div className="banner shared-state">
-          {task.shared ? `Shared with ${company.name}’s managers.` : `Not shared: only Sunridge sees this Task.`}
+          {task.shared ? `Shared with the ${company.name} team.` : `Not shared: only Sunridge sees this Task.`}
           {!disabled && (canBeShared(task.departmentId) || task.shared) && (
             <div style={{ marginTop: 8 }}>
               <button
@@ -372,9 +372,9 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
                 disabled={share.pending}
                 onClick={() => share.run(() => actions.shareTask(task.id, !task.shared))}
               >
-                {task.shared ? "Stop sharing" : `Share with ${company.name}’s managers`}
+                {task.shared ? "Stop sharing" : `Share with the ${company.name} team`}
               </button>
-              {task.shared && <div className="hint">Stopping takes {company.name}’s managers off this Task.</div>}
+              {task.shared && <div className="hint">Stopping takes the {company.name} team off this Task.</div>}
             </div>
           )}
           <ErrorBanner message={share.error} />
@@ -415,7 +415,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            move.run(() => actions.moveTask(task.id, isManager ? { status, waitingOn } : { status, ...parseHome(home, areas), waitingOn }));
+            move.run(() => actions.moveTask(task.id, isCompanyTeam ? { status, waitingOn } : { status, ...parseHome(home, areas), waitingOn }));
           }}
         >
           <ErrorBanner message={move.error} />
@@ -437,7 +437,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
           )}
           <div className="field">
             <label htmlFor="home">Where it lives</label>
-            {isManager ? (
+            {isCompanyTeam ? (
               <input id="home" type="text" value={`${departmentName(task.departmentId)}${task.areaId ? ` › ${areas.find((a) => a.id === task.areaId)?.name ?? ""}` : ""}`} disabled />
             ) : (
               <HomeSelect id="home" areas={areas} value={home} onChange={setHome} />
@@ -457,7 +457,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         {docs.map((d) => (
           <DocumentRow key={d.id} doc={d} disabled={disabled} moveTargets={data.moveTargets} />
         ))}
-        {!disabled && <AddDocument taskId={task.id} linksOnly={isManager} />}
+        {!disabled && <AddDocument taskId={task.id} linksOnly={isCompanyTeam} />}
         {removedDocs.length > 0 && (
           <details>
             <summary className="small">Removed Documents</summary>
@@ -479,7 +479,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         </ul>
       </details>
 
-      {!disabled && !isManager && <MoreActions {...props} />}
+      {!disabled && !isCompanyTeam && <MoreActions {...props} />}
     </>
   );
 }

@@ -29,7 +29,7 @@ import type { Store } from "@/store/store";
 
 /** Who is acting, and through which door (screen, Capture, Claude, import). */
 export interface Actor {
-  /** The Person's id. Named for the Trail column, which records Managers too. */
+  /** The Person's id. Named for the Trail column, which records the Company team too. */
   memberId: string;
   via: Via;
 }
@@ -50,10 +50,12 @@ export interface NewTask {
   contributorIds?: string[];
   due?: string | null;
   note?: string | null;
-  /** Visible to the Company's Managers. Off unless set. */
+  /** Visible to the Company team. Off unless set. */
   shared?: boolean;
   /** Where a Task came from, kept in its first Trail entry, e.g. "Meeting notes, 2 Oct". */
   source?: string;
+  /** Documents to add with the Task, on its Trail (used by the import). */
+  documents?: NewDocument[];
 }
 
 export interface TaskChanges {
@@ -132,7 +134,7 @@ export class Board {
 
   // ---------- reading ----------
 
-  /** Everyone the asker may see on the board: Members, plus Managers of the asker's own Company. */
+  /** Everyone the asker may see on the board: Members, plus the asker's own Company team. */
   async people(who: Reader): Promise<Person[]> {
     const me = await this.person(who);
     const all = await this.store.listPeople();
@@ -141,7 +143,7 @@ export class Board {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** The Companies the asker may open. A Manager sees only their own. */
+  /** The Companies the asker may open. The Company team sees only its own. */
   async companies(who: Reader): Promise<Company[]> {
     const me = await this.person(who);
     const all = await this.store.listCompanies();
@@ -178,7 +180,7 @@ export class Board {
     for (const d of documents) if (!d.removed) documentCounts[d.taskId] = (documentCounts[d.taskId] ?? 0) + 1;
     const open = tasks.filter(isOpen);
     const highShare = open.length ? open.filter((t) => t.priority === "high").length / open.length : 0;
-    // A Manager sees only the Areas that hold a Task shared with them; Area names can be sensitive too.
+    // The Company team sees only the Areas that hold a Task shared with them; Area names can be sensitive too.
     const usedAreas = new Set(tasks.map((t) => t.areaId));
     const areas = allAreas.filter((a) => !a.retired && (isMember(me) || usedAreas.has(a.id)));
     return {
@@ -304,10 +306,15 @@ export class Board {
       createdBy: actor.memberId,
       updatedAt: now,
     };
+    // Every Document is checked before anything is written.
+    const documents = (input.documents ?? []).map((d) => this.newDocument(task, d, actor));
     await this.commit(
       [this.entry(actor, task, "task", task.id, "created", null, input.source?.slice(0, 120) ?? null, task.title)],
       () => this.store.putTask(task),
     );
+    for (const doc of documents) {
+      await this.commit([this.entry(actor, task, "document", doc.id, "added", null, null, doc.name)], () => this.store.putDocument(doc));
+    }
     return task;
   }
 
@@ -389,8 +396,8 @@ export class Board {
   }
 
   /**
-   * Share a Task with its Company's Managers, or stop sharing it (ADR 0005). Stopping takes
-   * Managers off its Owners and Contributors; every Task keeps a Member as Owner, so it is never left without one.
+   * Share a Task with its Company team, or stop sharing it (ADR 0005). Stopping takes
+   * the Company team off its Owners and Contributors; every Task keeps a Member as Owner, so it is never left without one.
    */
   async shareTask(actor: Actor, id: string, shared: boolean): Promise<Task> {
     await this.requireMember(actor, "share Tasks");
@@ -431,19 +438,7 @@ export class Board {
     if (input.kind !== "link" && !isMember(await this.person(actor))) {
       throw new BoardError("not_allowed", "You can add Links. Ask Sunridge to add Files.");
     }
-    checkDocumentStatus(input.status ?? "draft");
-    const doc: Document = {
-      id: this.newId(),
-      taskId,
-      kind: input.kind,
-      name: cleanName(input.name, "A Document"),
-      url: cleanUrl(input.url),
-      status: input.status ?? "draft",
-      driveItemId: input.kind === "file" ? (input.driveItemId ?? null) : null,
-      removed: false,
-      createdAt: this.clock().toISOString(),
-      createdBy: actor.memberId,
-    };
+    const doc = this.newDocument(task, input, actor);
     await this.commit([this.entry(actor, task, "document", doc.id, "added", null, null, doc.name)], () =>
       this.store.putDocument(doc),
     );
@@ -663,6 +658,23 @@ export class Board {
     };
   }
 
+  private newDocument(task: Task, input: NewDocument, actor: Actor): Document {
+    if (!DOCUMENT_KINDS.includes(input.kind)) throw new BoardError("invalid", "A Document is a File, a Link or Claude work.");
+    checkDocumentStatus(input.status ?? "draft");
+    return {
+      id: this.newId(),
+      taskId: task.id,
+      kind: input.kind,
+      name: cleanName(input.name, "A Document"),
+      url: cleanUrl(input.url),
+      status: input.status ?? "draft",
+      driveItemId: input.kind === "file" ? (input.driveItemId ?? null) : null,
+      removed: false,
+      createdAt: this.clock().toISOString(),
+      createdBy: actor.memberId,
+    };
+  }
+
   private async setDocumentRemoved(actor: Actor, id: string, removed: boolean): Promise<Document> {
     const { doc, task } = await this.requireEditableDocument(actor, id);
     if (doc.removed === removed) return doc;
@@ -704,7 +716,7 @@ export class Board {
   }
 
   /**
-   * Owners and Contributors: Members, or this Company's Managers on a Shared Task.
+   * Owners and Contributors: Members, or this Company's team on a Shared Task.
    * At least one Owner is a Member, so Sunridge stays accountable for every Task.
    */
   private async checkPeople(
@@ -719,7 +731,7 @@ export class Board {
         const p = everyone.get(id);
         if (!p) throw new BoardError("invalid", `Every ${role} must be someone on the board.`);
         if (!isMember(p) && !(task.shared && p.companyId === task.companyId)) {
-          throw new BoardError("invalid", `A Manager can be an ${role} only on a Shared Task in their own company.`);
+          throw new BoardError("invalid", `Someone from a company team can be an ${role} only on a Shared Task in their own company.`);
         }
       }
       return unique;
@@ -742,14 +754,14 @@ export class Board {
     if ((await this.nowCount(companyId, excludeTaskId)) >= NOW_CAP) throw await this.nowCapError(companyId, who);
   }
 
-  /** The cap counts every Task, including ones a Manager can't see, so a Manager is told whom to ask. */
+  /** The cap counts every Task, including ones the Company team can't see, so they are told whom to ask. */
   private async nowCapError(companyId: string, who?: Reader): Promise<BoardError> {
     const company = (await this.store.listCompanies()).find((c) => c.id === companyId);
     const name = company?.name ?? "This company";
-    const manager = who ? !isMember(await this.person(who)) : false;
+    const companyTeam = who ? !isMember(await this.person(who)) : false;
     return new BoardError(
       "now_cap",
-      manager
+      companyTeam
         ? `${name} already has ${NOW_CAP} Tasks in Now. Ask Sunridge which one to move out first.`
         : `${name} already has ${NOW_CAP} Tasks in Now. Move one out first.`,
     );

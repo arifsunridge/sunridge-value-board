@@ -6,18 +6,41 @@
  *   (edit review.json: fix titles, owners and priority; set "approved": true)
  *   npm run import -- apply private/review.json --as <your email>
  *
+ * The team board artifact (its database export, one folder per collection) is prepared the same way,
+ * then reviewed and imported on the board's Import screen by a Member:
+ *
+ *   npm run import -- prepare-team-board <export dir> --config private/team-board.json --out private/review.json
+ *
+ * where team-board.json is { "people": { "u_…": "<email>" }, "guessed": ["u_…"], "companies": { "p-hbf": "HBF" } }.
+ *
  * Keep backups and review files in private/ (git-ignored). They hold real company data.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { Board } from "@/board/board";
+import { applyReview } from "@/import/apply";
 import { MysqlStore } from "@/store/mysql";
+import { prepareTeamBoard, type TeamBoardExport, type TeamBoardOptions } from "@/import/team-board";
 import { prepare, type Backup, type ReviewItem } from "./prototype";
+
+/** Reads one exported collection: <dir>/<collection>/<id>.json → { id: document }. */
+function collection<T>(dir: string, name: string): Record<string, T> {
+  const out: Record<string, T> = {};
+  let files: string[] = [];
+  try {
+    files = readdirSync(join(dir, name)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return out;
+  }
+  for (const f of files) out[f.slice(0, -5)] = JSON.parse(readFileSync(join(dir, name, f), "utf8")) as T;
+  return out;
+}
 
 async function main() {
   const { positionals, values } = parseArgs({
     allowPositionals: true,
-    options: { members: { type: "string" }, out: { type: "string" }, as: { type: "string" } },
+    options: { members: { type: "string" }, out: { type: "string" }, as: { type: "string" }, config: { type: "string" } },
   });
   const [step, file] = positionals;
 
@@ -29,6 +52,22 @@ async function main() {
     const items = prepare(backup, { members, companies: { "p-hbf": "HBF", "p-sunridge": "Sunridge" } });
     writeFileSync(values.out, JSON.stringify(items, null, 2));
     console.log(`Wrote ${items.length} Tasks to review. Set "approved": true on each one you want imported.`);
+    return;
+  }
+
+  if (step === "prepare-team-board" && file) {
+    if (!values.config || !values.out) throw new Error("prepare-team-board needs --config and --out.");
+    const data: TeamBoardExport = {
+      projects: collection(file, "projects"),
+      categories: collection(file, "categories"),
+      actions: collection(file, "actions"),
+      documents: collection(file, "documents"),
+    };
+    const options = JSON.parse(readFileSync(values.config, "utf8")) as TeamBoardOptions;
+    const items = prepareTeamBoard(data, options);
+    writeFileSync(values.out, JSON.stringify(items, null, 2));
+    const flagged = items.filter((i) => i.check.length).length;
+    console.log(`Wrote ${items.length} Tasks to review (${flagged} to check). Import them on the board's Import screen.`);
     return;
   }
 
@@ -44,42 +83,19 @@ async function main() {
       password: env.DB_PASSWORD ?? "",
       database: env.DB_NAME ?? "value_board",
     });
-    const board = new Board(store);
     const actor = { memberId: values.as, via: "import" as const };
-    const companies = await board.companies(actor);
-    for (const item of items) {
-      const company = companies.find((c) => c.name === item.company);
-      if (!company) throw new Error(`No company called ${item.company} on the board.`);
-      let areaId: string | null = null;
-      if (item.area) {
-        const areas = (await board.board(actor, company.id)).areas;
-        areaId =
-          areas.find((a) => a.name === item.area && a.departmentId === item.departmentId)?.id ??
-          (await board.createArea(actor, { companyId: company.id, departmentId: item.departmentId, name: item.area })).id;
-      }
-      // Imported Tasks start outside Now; the cap is applied when people move them.
-      const task = await board.createTask(actor, {
-        companyId: company.id,
-        departmentId: item.departmentId,
-        areaId,
-        title: item.title,
-        priority: item.priority,
-        ownerIds: item.ownerIds,
-        contributorIds: item.contributorIds,
-        due: item.due,
-        source: "Prototype board",
-      });
-      if (item.status !== "next" && item.status !== "now") {
-        await board.moveTask(actor, task.id, { status: item.status, waitingOn: item.status === "blocked" ? "Check after import" : undefined });
-      }
-      console.log(`Imported: ${task.title}`);
-    }
+    const result = await applyReview(new Board(store), actor, items);
+    for (const t of result.imported) console.log(`Imported: ${t.title}`);
+    for (const t of result.notInNow) console.log(`In Next, as Now was full: ${t}`);
+    for (const t of result.skipped) console.log(`Skipped: ${t.title} (${t.reason})`);
     await store.close();
-    console.log(`Done: ${items.length} Tasks.`);
+    console.log(`Done: ${result.imported.length} of ${items.length} approved Tasks imported.`);
     return;
   }
 
-  throw new Error("Use: import-prototype prepare <backup.json> --members <file> --out <file> | apply <review.json> --as <your email>");
+  throw new Error(
+    "Use: import-prototype prepare <backup.json> --members <file> --out <file> | prepare-team-board <export dir> --config <file> --out <file> | apply <review.json> --as <your email>",
+  );
 }
 
 main().catch((error) => {

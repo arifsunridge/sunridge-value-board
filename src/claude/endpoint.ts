@@ -82,7 +82,7 @@ export async function handleMcp(request: Request, o: EndpointOptions): Promise<R
     if (error instanceof AccessDenied) return challenge(o, error);
     throw error;
   }
-  // Claude access is for Members only (ADR 0005): Managers use the screen.
+  // Claude access is for Members only (ADR 0005): the Company team uses the screen.
   if (who.kind !== "member") return challenge(o, new AccessDenied("Claude access is for Sunridge Members only.", "invalid"));
   await o.board.recordPerson(who);
 
