@@ -3,6 +3,9 @@
 
 import { TITLE_MAX_WORDS, isDepartmentId, type DepartmentId, type Priority, type Status } from "@/board/model";
 import { words } from "@/board/rules";
+import type { ReviewItem } from "@/import/review";
+
+export type { ReviewItem };
 
 export interface Backup {
   categories: Record<string, { name: string; parentId: string | null; projectId: string | null }>;
@@ -22,23 +25,6 @@ export interface Backup {
   >;
 }
 
-export interface ReviewItem {
-  prototypeId: string;
-  company: string;
-  departmentId: DepartmentId;
-  area: string | null;
-  title: string;
-  originalTitle: string;
-  priority: Priority;
-  status: Status;
-  ownerIds: string[];
-  contributorIds: string[];
-  due: string | null;
-  /** Reasons Arif must look at this one before it is imported. */
-  check: string[];
-  /** Set to true once reviewed; only approved items are imported. */
-  approved: boolean;
-}
 
 const DEPARTMENTS: Record<string, DepartmentId> = {
   "d-strategy": "strategy",

@@ -43,10 +43,13 @@ The board refuses to start in production without the portal and database setting
 
 The team works today in the "Sunridge team board" Claude artifact. Move it across once the board is live, then stop editing the artifact, so there's one board:
 
-1. Export the artifact's data (the backup JSON) into `private/` (git-ignored).
-2. `npm run import -- prepare private/team-board-backup.json --members private/members.json --out private/review.json`, where `members.json` maps first names (and the prototype's user IDs) to people's email addresses.
-3. Review every item, set `"approved": true`, then `npm run import -- apply private/review.json --as <your email>` with the `DB_*` settings of the board's database. Sign in to the board once first, so it knows you.
-4. Imported Tasks are not Shared. Members choose which ones HBF's managers see.
+1. Export the artifact's database (the `projects`, `categories`, `actions` and `documents` collections, one JSON file per document, one folder per collection) into `private/team-board/` (git-ignored).
+2. Write `private/team-board.json`: `{ "people": { "u_…": "<email>" }, "guessed": [], "companies": { "p-hbf": "HBF", … } }`, mapping the artifact's user ids to people's emails and its projects to the board's companies.
+3. `npm run import -- prepare-team-board private/team-board --config private/team-board.json --out private/review.json`
+4. Everyone named as an Owner signs in to the board once, so the board knows them.
+5. On the board, **Import** (Members only): upload `review.json`, check every row, choose an Owner where there is none, untick what you don't want, and import. Tasks come in as you, with their Status, Documents and Priority, and are not Shared. A company's Now holds 5: the rest come in as Next, and the screen says which. Running it again adds nothing already on the board.
+
+The older prototype backup is prepared with `npm run import -- prepare` instead, and imports the same way.
 
 ## 5. Capture
 

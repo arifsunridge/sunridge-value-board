@@ -54,6 +54,8 @@ export interface NewTask {
   shared?: boolean;
   /** Where a Task came from, kept in its first Trail entry, e.g. "Meeting notes, 2 Oct". */
   source?: string;
+  /** Documents to add with the Task, on its Trail (used by the import). */
+  documents?: NewDocument[];
 }
 
 export interface TaskChanges {
@@ -304,10 +306,15 @@ export class Board {
       createdBy: actor.memberId,
       updatedAt: now,
     };
+    // Every Document is checked before anything is written.
+    const documents = (input.documents ?? []).map((d) => this.newDocument(task, d, actor));
     await this.commit(
       [this.entry(actor, task, "task", task.id, "created", null, input.source?.slice(0, 120) ?? null, task.title)],
       () => this.store.putTask(task),
     );
+    for (const doc of documents) {
+      await this.commit([this.entry(actor, task, "document", doc.id, "added", null, null, doc.name)], () => this.store.putDocument(doc));
+    }
     return task;
   }
 
@@ -431,19 +438,7 @@ export class Board {
     if (input.kind !== "link" && !isMember(await this.person(actor))) {
       throw new BoardError("not_allowed", "You can add Links. Ask Sunridge to add Files.");
     }
-    checkDocumentStatus(input.status ?? "draft");
-    const doc: Document = {
-      id: this.newId(),
-      taskId,
-      kind: input.kind,
-      name: cleanName(input.name, "A Document"),
-      url: cleanUrl(input.url),
-      status: input.status ?? "draft",
-      driveItemId: input.kind === "file" ? (input.driveItemId ?? null) : null,
-      removed: false,
-      createdAt: this.clock().toISOString(),
-      createdBy: actor.memberId,
-    };
+    const doc = this.newDocument(task, input, actor);
     await this.commit([this.entry(actor, task, "document", doc.id, "added", null, null, doc.name)], () =>
       this.store.putDocument(doc),
     );
@@ -660,6 +655,23 @@ export class Board {
       via: actor.via,
       at: this.clock().toISOString(),
       outcome: "ok",
+    };
+  }
+
+  private newDocument(task: Task, input: NewDocument, actor: Actor): Document {
+    if (!DOCUMENT_KINDS.includes(input.kind)) throw new BoardError("invalid", "A Document is a File, a Link or Claude work.");
+    checkDocumentStatus(input.status ?? "draft");
+    return {
+      id: this.newId(),
+      taskId: task.id,
+      kind: input.kind,
+      name: cleanName(input.name, "A Document"),
+      url: cleanUrl(input.url),
+      status: input.status ?? "draft",
+      driveItemId: input.kind === "file" ? (input.driveItemId ?? null) : null,
+      removed: false,
+      createdAt: this.clock().toISOString(),
+      createdBy: actor.memberId,
     };
   }
 
