@@ -1,11 +1,13 @@
+import Link from "next/link";
+
 export default function SignedOut() {
   return (
     <main className="narrow">
       <h1>You’ve signed out</h1>
       <p>
-        <a className="button" href="/auth/signin">
+        <Link className="button" href="/">
           Sign in again
-        </a>
+        </Link>
       </p>
     </main>
   );

@@ -1,14 +1,19 @@
+import { notFound } from "next/navigation";
+import { isMember } from "@/board/model";
 import { board } from "@/server/context";
 import { config } from "@/server/config";
-import { requireMember } from "@/server/session";
+import { requirePerson } from "@/server/session";
 import { CaptureScreen } from "@/ui/CaptureScreen";
 import { CompanyViews } from "@/ui/CompanyViews";
 
 export default async function CapturePage({ params }: { params: Promise<{ companyId: string }> }) {
   const { companyId } = await params;
-  await requireMember(`/c/${companyId}/capture`);
+  const me = await requirePerson(`/c/${companyId}/capture`);
+  if (!isMember(me)) notFound();
   const b = board();
-  const [view, members] = await Promise.all([b.board(companyId), b.members()]);
+  const [view, people] = await Promise.all([b.board(me, companyId), b.people(me)]);
+  // Capture suggests Owners from Members only; Managers are added to Shared Tasks on the board.
+  const members = people.filter(isMember);
   const enabled = config().CAPTURE_ENABLED === "true";
   return (
     <main>

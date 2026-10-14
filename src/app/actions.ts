@@ -5,14 +5,14 @@ import type { Actor, Board, Move, NewTask, TaskChanges } from "@/board/board";
 import type { DocumentKind, DocumentStatus } from "@/board/model";
 import { BoardError } from "@/board/rules";
 import { board } from "@/server/context";
-import { requireMember } from "@/server/session";
+import { requirePerson } from "@/server/session";
 
 export type ActionResult = { ok: true; id?: string } | { ok: false; message: string };
 
 async function run(fn: (b: Board, actor: Actor) => Promise<{ id: string } | unknown>): Promise<ActionResult> {
-  const member = await requireMember();
+  const person = await requirePerson();
   try {
-    const result = await fn(board(), { memberId: member.id, via: "screen" });
+    const result = await fn(board(), { memberId: person.id, via: "screen" });
     revalidatePath("/", "layout");
     const id = result && typeof result === "object" && "id" in result ? String(result.id) : undefined;
     return { ok: true, id };
@@ -38,6 +38,9 @@ export async function changeCompany(id: string, to: { companyId: string; departm
 }
 export async function joinTask(id: string) {
   return run((b, a) => b.joinTask(a, id));
+}
+export async function shareTask(id: string, shared: boolean) {
+  return run((b, a) => b.shareTask(a, id, shared));
 }
 export async function removeTask(id: string) {
   return run((b, a) => b.removeTask(a, id));

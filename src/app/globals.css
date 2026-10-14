@@ -522,3 +522,19 @@ section {
     grid-template-columns: 120px repeat(4, minmax(150px, 1fr));
   }
 }
+
+/* Shared with the company's Managers (ADR 0005): a quiet word on the card, like the Documents mark. */
+.shared-mark {
+  border: 1px solid var(--sage);
+  color: var(--olive-dark);
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+label.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}

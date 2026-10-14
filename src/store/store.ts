@@ -1,13 +1,13 @@
-import type { Area, Company, Document, Member, Task, TrailEntry } from "@/board/model";
+import type { Area, Company, Document, Person, Task, TrailEntry } from "@/board/model";
 
 /**
  * Where board data lives. Two adapters: in-memory (tests, local work) and
- * Microsoft Lists (production, ADR 0002 and 0003). Only `board/` calls this;
+ * MySQL on Render (production, ADR 0006). Only `board/` calls this;
  * the rules live there, not here.
  */
 export interface Store {
-  listMembers(): Promise<Member[]>;
-  putMember(member: Member): Promise<void>;
+  listPeople(): Promise<Person[]>;
+  putPerson(member: Person): Promise<void>;
 
   listCompanies(): Promise<Company[]>;
 

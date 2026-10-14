@@ -20,7 +20,7 @@ import {
   type Company,
   type DepartmentId,
   type Document,
-  type Member,
+  type Person,
   type Task,
 } from "@/board/model";
 import { BoardError } from "@/board/rules";
@@ -63,16 +63,16 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 /** Lookups that accept what a person would say: names as well as IDs. */
 class Lookup {
   private constructor(
-    readonly members: Member[],
+    readonly members: Person[],
     readonly companies: Company[],
     private readonly areas: Map<string, Area[]>,
     private readonly actor: Actor,
   ) {}
 
   static async load(board: Board, actor: Actor): Promise<Lookup> {
-    const [members, companies] = await Promise.all([board.members(), board.companies()]);
+    const [members, companies] = await Promise.all([board.people(actor), board.companies(actor)]);
     const areas = new Map<string, Area[]>();
-    await Promise.all(companies.map(async (c) => areas.set(c.id, (await board.board(c.id)).areas)));
+    await Promise.all(companies.map(async (c) => areas.set(c.id, (await board.board(actor, c.id)).areas)));
     return new Lookup(members, companies, areas, actor);
   }
 
@@ -137,6 +137,7 @@ class Lookup {
       due: t.due,
       overdue: isOverdue(t, today),
       ...(t.status === "blocked" ? { waiting_on: t.note } : { note: t.note || null }),
+      shared_with_company_managers: t.shared,
       you_can_change_it: t.ownerIds.includes(this.actor.memberId) || t.contributorIds.includes(this.actor.memberId),
       ...(t.removed ? { removed: true } : {}),
     };
@@ -173,7 +174,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
           l.companies.map(async (c) => ({
             id: c.id,
             name: c.name,
-            areas: (await board.board(c.id)).areas.map((a) => `${departmentName(a.departmentId)} › ${a.name}`),
+            areas: (await board.board(actor, c.id)).areas.map((a) => `${departmentName(a.departmentId)} › ${a.name}`),
           })),
         );
       }),
@@ -182,7 +183,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
   server.registerTool(
     "list_members",
     { title: "List Members", description: "The Sunridge Members who can own or contribute to Tasks.", annotations: read },
-    () => attempt(async () => (await board.members()).map((m) => ({ name: m.name, email: m.email, is_you: m.id === actor.memberId }))),
+    () => attempt(async () => (await board.people(actor)).map((m) => ({ name: m.name, email: m.email, is_you: m.id === actor.memberId }))),
   );
 
   server.registerTool(
@@ -206,7 +207,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
         const company = l.company(args.company);
         const person = args.person ? l.person(args.person) : null;
         const today = board.today();
-        const view = await board.board(company.id);
+        const view = await board.board(actor, company.id);
         return view.tasks
           .filter((t) => (args.status ? t.status === args.status : args.include_done || t.status !== "done"))
           .filter((t) => !args.priority || t.priority === args.priority)
@@ -223,7 +224,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
       attempt(async () => {
         const l = await lookup();
         const today = board.today();
-        return (await board.myTasks(actor.memberId)).filter(isOpen).map((t) => l.task(t, today));
+        return (await board.myTasks(actor)).filter(isOpen).map((t) => l.task(t, today));
       }),
   );
 
@@ -238,7 +239,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
     (args) =>
       attempt(async () => {
         const l = await lookup();
-        const { task, documents, trail } = await board.task(args.task_id);
+        const { task, documents, trail } = await board.task(actor, args.task_id);
         const names = Object.fromEntries(l.companies.map((c) => [c.id, c.name]));
         return {
           ...l.task(task, board.today()),
@@ -259,7 +260,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
     (args) =>
       attempt(async () => {
         const l = await lookup();
-        const s = await board.summary(l.company(args.company).id);
+        const s = await board.summary(actor, l.company(args.company).id);
         const today = board.today();
         return {
           company: s.company.name,
@@ -362,7 +363,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
     (args) =>
       attempt(async () => {
         const l = await lookup();
-        const { task: current } = await board.task(args.task_id);
+        const { task: current } = await board.task(actor, args.task_id);
         let home: { departmentId?: string; areaId?: string | null } = {};
         if (args.area && !same(args.area, "none")) {
           const area = l.area(current.companyId, args.area);
@@ -387,6 +388,22 @@ export function boardServer(board: Board, actor: Actor): McpServer {
       }),
     );
   }
+
+  server.registerTool(
+    "share_task",
+    {
+      title: "Share a Task with the company's Managers",
+      description:
+        "Share a Task with its company's Managers (for HBF, its managers in the HBF Portal), or stop sharing it. Tasks in Talent & organisation or Finance can never be shared. Stopping takes Managers off the Task. Confirm with the person before sharing.",
+      inputSchema: { task_id: z.string(), shared: z.boolean() },
+      annotations: write,
+    },
+    (args) =>
+      attempt(async () => {
+        const l = await lookup();
+        return l.task(await board.shareTask(actor, args.task_id, args.shared), board.today());
+      }),
+  );
 
   server.registerTool(
     "add_document_link",

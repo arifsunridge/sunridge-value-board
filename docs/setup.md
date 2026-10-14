@@ -1,88 +1,77 @@
 # Setting up the board
 
-Steps that need Sunridge IT (Microsoft 365 admin) are marked **IT**. Nothing here goes in the repo: certificates, secrets and IDs live in Render's environment settings.
+The board runs as an HBF Portal app (ADR 0006): sign-in through Cloudflare Access, access and role from the portal, data in its own `value_board` database on the portal's Render MySQL. Nothing here goes in the repo: passwords, tokens and IDs live in Render's environment settings.
 
-## 1. SharePoint site (IT)
+Steps marked **Arif** need the Cloudflare, Render or portal admin accounts.
 
-1. Create a private SharePoint site for the board, for example "Value Board". Owners: IT only.
-2. Give the Value Creation and Investment team **Read** access to the site. They open files and can see the Lists, but every change goes through the app (ADR 0003).
-3. Note the site ID: `GET https://graph.microsoft.com/v1.0/sites/{hostname}:/sites/{site-path}` → `id`.
+## 1. Database (Arif)
 
-## 2. App registration (IT)
+On the Render MySQL that holds the portal's database (never the live HBF database; the board refuses `hbroch.com` hosts):
 
-1. Microsoft Entra ID → App registrations → New. Name: "Sunridge Value Board". **Single tenant** (ADR 0001).
-2. Redirect URI (Web): `https://<board address>/auth/callback`.
-3. Enterprise application → Properties → **Assignment required: Yes**, then assign the team (Analyst, Senior Associates, Partners). Nobody else can sign in.
-4. Delegated permission: `User.Read` only.
-5. Application permission: `Sites.Selected`, with admin consent.
-6. Grant the app **write** on the board site only:
-   `POST https://graph.microsoft.com/v1.0/sites/{site-id}/permissions` with
-   `{ "roles": ["write"], "grantedToIdentities": [{ "application": { "id": "<client id>", "displayName": "Sunridge Value Board" } }] }`.
-   (Use `manage` for the first run of the provisioning script, which creates Lists, then reduce to `write`.)
-7. Certificates & secrets:
-   - Upload a certificate for the app identity. Keep the private key out of email and chat.
-   - Add a client secret for sign-in (24-month expiry, with a calendar reminder to rotate).
+1. Create the database: `CREATE DATABASE value_board;`
+2. Create the tables once, with an admin login:
 
-## 3. Lists and companies
+   ```
+   DB_HOST=<render mysql host> DB_USER=<admin> DB_PASSWORD=... DB_NAME=value_board npm run db:init
+   ```
 
-```
-cp .env.example .env    # fill in ENTRA_*, SHAREPOINT_SITE_ID; STORE=lists
-npm run provision -- --company "HBF:portfolio:US" --company "Sunridge:sunridge:UK"
-```
+3. Run the `CREATE USER` and `GRANT` lines it prints, with a long random password. The board's own login can add to the Trail but never change or delete it. That is what keeps the Trail append-only (ADR 0006).
 
-## 4. Render
+## 2. Portal (Arif, as portal admin)
 
-1. New → Blueprint → this repository. `render.yaml` creates the service in Frankfurt.
-2. Fill in the `sync: false` values in the dashboard. Paste the certificate's private key into `ENTRA_CERT_PRIVATE_KEY`.
-3. Set `APP_BASE_URL` to the service address (or the HBF Portal path, once spec question Q4 is settled).
+The portal change that goes with this board (`hbf-portal`, branch `claude/vibrant-lovelace-ldsqt4`) fixes the Value Board's roles by audience: Sunridge people are **Member**, HBF people are **Manager**. After it is deployed:
 
-## 5. Prototype import (once)
+1. **App settings → Value Board:** tick both the `sunridge` and `hbf` audiences, set the roles to `Member, Manager`, and set the address to `https://hbf-value-board.sunridge.app`. The portal only adds an app's row when it is missing, so this edit is needed once.
+2. **People & access:** give each Sunridge person the Value Board as **Member**. Existing Value Board grants have no role and stop working until they are given one.
+3. When Sunridge is ready, give HBF managers (for example HBF's CEO) the Value Board as **Manager**. They see nothing until a Member shares Tasks with them.
 
-Keep the backup and review file in `private/` (git-ignored).
+## 3. Render and Cloudflare (Arif)
 
-```
-npm run import -- prepare private/team-board-backup.json --members private/members.json --out private/review.json
-# Review every item: fix titles, Owners and Priority; set "approved": true
-npm run import -- apply private/review.json --as <your member id>
-```
+1. Render: New → Web Service from this repository, or a Blueprint with `render.yaml`. Fill in the `sync: false` values:
+   - `DB_HOST`, `DB_PASSWORD`: the board's own login from step 1.
+   - `PORTAL_INTERNAL_URL`, `PORTAL_SERVICE_TOKEN`: the same as the other portal apps.
+   - `CF_ACCESS_TEAM_DOMAIN`: `sunridgeportal.cloudflareaccess.com`.
+   - `CF_ACCESS_AUD`: from step 3 below.
+2. Cloudflare DNS: `hbf-value-board.sunridge.app` → the Render service, proxied, and add it as a custom domain in Render.
+3. Cloudflare Zero Trust: a self-hosted Access application for `hbf-value-board.sunridge.app`, with the same policies as the other HBF apps (Sunridge by Microsoft, `@hbroch.com` by email code). Copy its AUD tag into `CF_ACCESS_AUD`.
+4. Run the portal's go-live checklist (`hbf-portal/docs/security.md`). In particular, check that the `onrender.com` address answers "Open the board from the HBF Portal" with no token.
 
-`members.json` maps first names (and the prototype's user IDs) to Members' Entra object IDs. Members appear in the "Board Members" list after their first sign-in.
+The board refuses to start in production without the portal and database settings. A person the portal hasn't granted the Value Board sees a no-access page with a link back to the portal.
 
-## 6. Capture
+## 4. Moving the team board across
 
-Leave `CAPTURE_ENABLED=false` until Partners and IT answer spec question Q1. Then set `ANTHROPIC_API_KEY` and `CAPTURE_ENABLED=true`.
+The team works today in the "Sunridge team board" Claude artifact. Move it across once the board is live, then stop editing the artifact, so there's one board:
 
-## 7. Claude access (P1)
+1. Export the artifact's data (the backup JSON) into `private/` (git-ignored).
+2. `npm run import -- prepare private/team-board-backup.json --members private/members.json --out private/review.json`, where `members.json` maps first names (and the prototype's user IDs) to people's email addresses.
+3. Review every item, set `"approved": true`, then `npm run import -- apply private/review.json --as <your email>` with the `DB_*` settings of the board's database. Sign in to the board once first, so it knows you.
+4. Imported Tasks are not Shared. Members choose which ones HBF's managers see.
 
-Lets Members read and change the board from Claude chat or Claude Code, as themselves, under the same rules as the screen ([ADR 0004](adr/0004-claude-endpoint-address-is-the-app-id.md)). Leave `CLAUDE_ACCESS_ENABLED=false` until spec question Q1 is answered.
+## 5. Capture
 
-**Domain (IT).** Give the board a custom domain verified in Microsoft 365, for example `board.sunridgepartners.com`, and add it to the Render service. Set `APP_BASE_URL` to it.
+Leave `CAPTURE_ENABLED=false` until Partners and IT answer spec question Q1. Then set `ANTHROPIC_API_KEY` and `CAPTURE_ENABLED=true`. Capture is for Members only.
 
-**The board's app registration (IT).**
+## 6. Claude access (P1)
 
-1. Expose an API → Application ID URI: `https://<board domain>/mcp`. It must match exactly, with no trailing slash.
-2. Add a scope: `Board.ReadWrite`, "Read and change the Value Board as you". Who can consent: admins and users.
-3. Manifest: set `requestedAccessTokenVersion` (shown as `accessTokenAcceptedVersion` in older manifests) to `2`.
+Lets Members read and change the board from Claude chat or Claude Code, as themselves, under the same rules as the screen ([ADR 0004](adr/0004-claude-endpoint-address-is-the-app-id.md)). Managers can't use it. Leave `CLAUDE_ACCESS_ENABLED=false` until spec question Q1 is answered, and until:
 
-**A client app for Claude (IT).** Register a second app, "Sunridge Value Board for Claude", single tenant:
+1. Cloudflare Access exempts `/mcp` and `/.well-known/oauth-protected-resource/mcp` (a Bypass policy for those paths only). Claude signs in with Entra tokens, which the board checks itself; it can't pass Cloudflare's login.
+2. The board's app registration exposes `https://hbf-value-board.sunridge.app/mcp` as its Application ID URI, with the `Board.ReadWrite` scope, and a client app for Claude is registered (ADR 0004). Set `ENTRA_TENANT_ID` and `ENTRA_CLIENT_ID`.
 
-1. API permissions: the board's `Board.ReadWrite`, with admin consent.
-2. Web redirect URI `https://claude.ai/api/mcp/auth_callback`, plus a client secret for claude.ai.
-3. Mobile and desktop redirect URIs `http://localhost/callback` and `http://127.0.0.1/callback` for Claude Code. Allow public client flows, so Claude Code needs no secret.
-
-**claude.ai (an Owner of Sunridge's Claude organisation).** Organization settings → Connectors → Add custom connector. URL: `https://<board domain>/mcp`. Advanced settings → use your own OAuth client: the Claude client app's ID and secret.
-
-**Claude Code (each Member).**
-
-```
-claude mcp add --transport http --client-id <Claude client app ID> --callback-port 8765 \
-  sunridge-board https://<board domain>/mcp
-```
-
-Then run `/mcp` in Claude Code to sign in with your Microsoft account.
+Claude identifies a Member by the email in their Entra token, which matches their portal sign-in.
 
 **Trying it locally.** With `AUTH_MODE=dev` and `CLAUDE_ACCESS_ENABLED=true` in `.env`:
 
 ```
 claude mcp add --transport http --header "Authorization: Bearer dev:m-theran" sunridge-board-local http://localhost:3000/mcp
 ```
+
+## Local work
+
+```
+cp .env.example .env   # set SESSION_SECRET; AUTH_MODE=dev and STORE=memory need nothing else
+npm install
+npm run dev            # http://localhost:3000: choose a Member, or "Jordan Example (company manager)" to see the Manager view
+```
+
+To run the store checks on MySQL as well, point `TEST_DB_HOST` (and `TEST_DB_USER`, `TEST_DB_PASSWORD`, `TEST_DB_NAME`) at a throwaway database and run `npm test`. The tests drop and recreate the board's tables there.

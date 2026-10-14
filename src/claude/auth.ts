@@ -1,5 +1,5 @@
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
-import type { Member } from "@/board/model";
+import type { Person } from "@/board/model";
 
 /** The one delegated scope Claude needs: act on the board as the signed-in Member. */
 export const BOARD_SCOPE = "Board.ReadWrite";
@@ -39,7 +39,7 @@ function entraKeys(tenantId: string): JWTVerifyGetKey {
  * Member it speaks for. Only v2 tokens from the Sunridge tenant (ADR 0001), for this app,
  * carrying Board.ReadWrite, are accepted.
  */
-export async function memberFromToken(token: string, check: TokenCheck): Promise<Member> {
+export async function memberFromToken(token: string, check: TokenCheck): Promise<Person> {
   let payload: Record<string, unknown>;
   try {
     ({ payload } = await jwtVerify(token, check.keys ?? entraKeys(check.tenantId), {
@@ -59,5 +59,7 @@ export async function memberFromToken(token: string, check: TokenCheck): Promise
   }
   const email = typeof payload.preferred_username === "string" ? payload.preferred_username : "";
   const name = typeof payload.name === "string" ? payload.name : email || "Member";
-  return { id: payload.oid, name, email };
+  // A Person's id is their lower-cased email, as the HBF Portal verifies it (ADR 0006).
+  if (!email) throw new AccessDenied("The access token carries no email address.", "invalid");
+  return { id: email.toLowerCase(), name, email, kind: "member", companyId: null };
 }

@@ -1,4 +1,4 @@
-import type { Member, TrailEntry } from "@/board/model";
+import type { Person, TrailEntry } from "@/board/model";
 import { DOCUMENT_STATUS_LABELS, PRIORITY_LABELS, STATUS_LABELS, departmentName, initials, isDepartmentId } from "@/board/model";
 
 const day = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -12,11 +12,11 @@ export function formatWhen(iso: string): string {
   return dayTime.format(new Date(iso));
 }
 
-export function peopleInitials(ids: string[], members: Member[]): string {
+export function peopleInitials(ids: string[], members: Person[]): string {
   return ids.map((id) => initials(members.find((m) => m.id === id)?.name ?? "?")).join(" ");
 }
 
-export function peopleNames(ids: string[], members: Member[]): string {
+export function peopleNames(ids: string[], members: Person[]): string {
   return ids.map((id) => members.find((m) => m.id === id)?.name ?? "Former member").join(", ");
 }
 
@@ -35,7 +35,7 @@ const FIELD_LABELS: Record<string, string> = {
   url: "link",
 };
 
-function value(field: string | null, raw: string | null, members: Member[], names: Record<string, string>): string {
+function value(field: string | null, raw: string | null, members: Person[], names: Record<string, string>): string {
   if (raw === null || raw === "") return "nothing";
   if (field === "status") return STATUS_LABELS[raw as keyof typeof STATUS_LABELS] ?? raw;
   if (field === "priority") return PRIORITY_LABELS[raw as keyof typeof PRIORITY_LABELS] ?? raw;
@@ -51,8 +51,8 @@ function value(field: string | null, raw: string | null, members: Member[], name
 const VIA: Record<TrailEntry["via"], string> = { screen: "", capture: " from meeting notes", claude: " via Claude", import: " from the prototype import" };
 
 /** One plain-English line per Trail entry. */
-export function describe(entry: TrailEntry, members: Member[], names: Record<string, string> = {}): string {
-  const who = members.find((m) => m.id === entry.memberId)?.name ?? "A former member";
+export function describe(entry: TrailEntry, members: Person[], names: Record<string, string> = {}): string {
+  const who = members.find((m) => m.id === entry.memberId)?.name ?? "Someone no longer on the board";
   const via = VIA[entry.via];
   const v = (raw: string | null) => value(entry.field, raw, members, names);
   if (entry.subject === "area") {
@@ -89,6 +89,10 @@ export function describe(entry: TrailEntry, members: Member[], names: Record<str
       return `${who} restored this Task${via}`;
     case "joined":
       return `${who} joined as a Contributor${via}`;
+    case "shared":
+      return `${who} shared this Task with the company's managers${via}`;
+    case "unshared":
+      return `${who} stopped sharing this Task with the company's managers${via}`;
     default:
       return `${who} changed the ${FIELD_LABELS[entry.field ?? ""] ?? entry.field} from ${v(entry.old)} to ${v(entry.new)}${via}`;
   }

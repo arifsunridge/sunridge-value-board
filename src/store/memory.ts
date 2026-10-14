@@ -1,10 +1,10 @@
-import type { Area, Company, Document, Member, Task, TrailEntry } from "@/board/model";
+import type { Area, Company, Document, Person, Task, TrailEntry } from "@/board/model";
 import type { Store } from "./store";
 
 const copy = <T>(value: T): T => structuredClone(value);
 
 export interface Seed {
-  members?: Member[];
+  people?: Person[];
   companies?: Company[];
   areas?: Area[];
   tasks?: Task[];
@@ -14,7 +14,7 @@ export interface Seed {
 
 /** In-memory store for tests and local work. Returns copies so callers can't mutate state. */
 export class MemoryStore implements Store {
-  private members = new Map<string, Member>();
+  private people = new Map<string, Person>();
   private companies = new Map<string, Company>();
   private areas = new Map<string, Area>();
   private tasks = new Map<string, Task>();
@@ -22,7 +22,7 @@ export class MemoryStore implements Store {
   private trail: TrailEntry[] = [];
 
   constructor(seed: Seed = {}) {
-    seed.members?.forEach((m) => this.members.set(m.id, copy(m)));
+    seed.people?.forEach((m) => this.people.set(m.id, copy(m)));
     seed.companies?.forEach((c) => this.companies.set(c.id, copy(c)));
     seed.areas?.forEach((a) => this.areas.set(a.id, copy(a)));
     seed.tasks?.forEach((t) => this.tasks.set(t.id, copy(t)));
@@ -30,11 +30,11 @@ export class MemoryStore implements Store {
     this.trail = copy(seed.trail ?? []);
   }
 
-  async listMembers() {
-    return [...this.members.values()].map(copy);
+  async listPeople() {
+    return [...this.people.values()].map(copy);
   }
-  async putMember(member: Member) {
-    this.members.set(member.id, copy(member));
+  async putPerson(member: Person) {
+    this.people.set(member.id, copy(member));
   }
 
   async listCompanies() {

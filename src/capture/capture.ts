@@ -9,7 +9,7 @@ import {
   type Area,
   type Company,
   type DepartmentId,
-  type Member,
+  type Person,
   type Priority,
 } from "@/board/model";
 import { words } from "@/board/rules";
@@ -63,7 +63,7 @@ export function systemPrompt(): string {
   ].join("\n");
 }
 
-export function userPrompt(input: { company: Company; areas: Area[]; members: Member[]; meetingDate: string; notes: string }): string {
+export function userPrompt(input: { company: Company; areas: Area[]; members: Person[]; meetingDate: string; notes: string }): string {
   const departments = DEPARTMENTS.map((d) => {
     const areas = input.areas.filter((a) => a.departmentId === d.id && !a.retired);
     return `- ${d.id} (${d.name})${areas.length ? `: ${areas.map((a) => `${a.id} = ${a.name}`).join("; ")}` : ""}`;
@@ -89,7 +89,7 @@ export class CaptureError extends Error {}
 /** Asks Claude for Suggestions. The notes go in the request only; they are never stored or logged. */
 export async function suggestTasks(
   client: Anthropic,
-  input: { company: Company; areas: Area[]; members: Member[]; meetingDate: string; notes: string },
+  input: { company: Company; areas: Area[]; members: Person[]; meetingDate: string; notes: string },
 ): Promise<Suggestion[]> {
   const message = await client.beta.messages.parse({
     model: MODEL,
@@ -110,7 +110,7 @@ export async function suggestTasks(
 /** Keeps only what the board can accept: known Members and Areas, real dates. Long titles stay for the person to fix. */
 export function clean(
   suggestions: z.infer<typeof schema>["suggestions"],
-  input: { areas: Area[]; members: Member[] },
+  input: { areas: Area[]; members: Person[] },
 ): Suggestion[] {
   const memberIds = new Set(input.members.map((m) => m.id));
   return suggestions.map((s) => {

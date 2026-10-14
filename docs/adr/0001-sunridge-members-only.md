@@ -1,3 +1,7 @@
+---
+status: superseded by 0005
+---
+
 # Only Sunridge staff can ever sign in
 
 Only accounts in the Sunridge Microsoft 365 tenant can sign in. Portfolio company staff have no access in any planned version, not even to the Tasks they are doing. The original brief asked for the option to add HBF staff later without a rebuild. We dropped it on purpose: the board holds people, financing and exit work that company staff must never see, and one wrong access setting would cost more than relaying their updates ourselves.

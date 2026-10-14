@@ -8,6 +8,7 @@ import type { Store } from "@/store/store";
 const arif: Actor = { memberId: "m-arif", via: "screen" };
 const theran: Actor = { memberId: "m-theran", via: "screen" };
 const hugues: Actor = { memberId: "m-hugues", via: "screen" };
+const jack: Actor = { memberId: "m-jack", via: "screen" };
 
 let store: MemoryStore;
 let board: Board;
@@ -38,7 +39,7 @@ describe("creating a Task", () => {
     const task = await board.createTask(arif, newTask({ departmentId: "finance" }));
     expect(task.departmentId).toBe("operations");
     expect(task.status).toBe("next");
-    const { trail } = await board.task(task.id);
+    const { trail } = await board.task(arif, task.id);
     expect(trail).toMatchObject([{ action: "created", memberId: "m-arif", via: "screen", new: task.title }]);
   });
 
@@ -88,7 +89,7 @@ describe("the Now cap", () => {
 
   it("counts Tasks, not people: one Member may own several in Now", async () => {
     await fillNow();
-    const view = await board.board("c-hbf");
+    const view = await board.board(arif, "c-hbf");
     expect(view.nowCount).toBe(5);
   });
 
@@ -135,9 +136,9 @@ describe("moving and Blocked", () => {
   });
 
   it("logs Company changes as an explicit move", async () => {
-    const moved = await board.changeCompany(theran, "t-2", { companyId: "c-sunridge", departmentId: "operations" });
+    const moved = await board.changeCompany(theran, "t-5", { companyId: "c-sunridge", departmentId: "operations" });
     expect(moved).toMatchObject({ companyId: "c-sunridge", areaId: null });
-    const { trail } = await board.task("t-2");
+    const { trail } = await board.task(arif, "t-5");
     expect(trail.some((e) => e.field === "companyId" && e.old === "c-hbf" && e.new === "c-sunridge")).toBe(true);
   });
 });
@@ -151,7 +152,7 @@ describe("who can change a Task", () => {
   it("lets any Member join as a Contributor, on the Trail", async () => {
     const joined = await board.joinTask(hugues, "t-1");
     expect(joined.contributorIds).toContain("m-hugues");
-    const { trail } = await board.task("t-1");
+    const { trail } = await board.task(arif, "t-1");
     expect(trail.at(-1)).toMatchObject({ action: "joined", memberId: "m-hugues" });
   });
 
@@ -163,7 +164,7 @@ describe("who can change a Task", () => {
 describe("the Trail", () => {
   it("records old and new values for each changed field", async () => {
     await board.updateTask(theran, "t-2", { priority: "low", due: "2026-10-20" });
-    const { trail } = await board.task("t-2");
+    const { trail } = await board.task(arif, "t-2");
     expect(trail).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ field: "priority", old: "high", new: "low" }),
@@ -174,7 +175,7 @@ describe("the Trail", () => {
 
   it("writes nothing when nothing changed", async () => {
     await board.updateTask(theran, "t-2", { priority: "high" });
-    expect((await board.task("t-2")).trail).toHaveLength(0);
+    expect((await board.task(arif, "t-2")).trail).toHaveLength(0);
   });
 
   it("marks a failed write and hides it from the visible Trail", async () => {
@@ -183,14 +184,14 @@ describe("the Trail", () => {
     await expect(failingBoard.updateTask(theran, "t-2", { priority: "low" })).rejects.toThrow("SharePoint unavailable");
     const raw = await store.listTrail({ taskId: "t-2" });
     expect(raw.map((e) => e.outcome)).toEqual(["ok", "failed"]);
-    expect((await board.task("t-2")).trail).toHaveLength(0);
+    expect((await board.task(arif, "t-2")).trail).toHaveLength(0);
   });
 
   it("keeps a removed Task's Trail, and the Task can be restored", async () => {
     await board.removeTask(theran, "t-2");
-    expect((await board.board("c-hbf")).tasks.some((t) => t.id === "t-2")).toBe(false);
+    expect((await board.board(arif, "c-hbf")).tasks.some((t) => t.id === "t-2")).toBe(false);
     await board.restoreTask(theran, "t-2");
-    const { trail } = await board.task("t-2");
+    const { trail } = await board.task(arif, "t-2");
     expect(trail.map((e) => e.action)).toEqual(["removed", "restored"]);
   });
 });
@@ -202,14 +203,14 @@ describe("Documents", () => {
     const doc = await board.addDocument(theran, "t-5", model);
     const after = await board.replaceDocument(theran, doc.id, { url: model.url, driveItemId: "item-1" });
     expect(after.id).toBe(doc.id);
-    const { trail } = await board.task("t-5");
+    const { trail } = await board.task(arif, "t-5");
     expect(trail.map((e) => e.action)).toEqual(["added", "new_version"]);
   });
 
   it("logs a replacement with the old and new links", async () => {
     const doc = await board.addDocument(theran, "t-5", { kind: "link", name: "Market note", url: "https://example.com/v2" });
     await board.replaceDocument(theran, doc.id, { url: "https://example.com/v3" });
-    const { trail } = await board.task("t-5");
+    const { trail } = await board.task(arif, "t-5");
     expect(trail.at(-1)).toMatchObject({ action: "replaced", old: "https://example.com/v2", new: "https://example.com/v3" });
   });
 
@@ -217,18 +218,18 @@ describe("Documents", () => {
     const doc = await board.addDocument(theran, "t-5", model);
     await board.joinTask(theran, "t-4");
     await board.moveDocument(theran, doc.id, "t-4");
-    expect((await board.task("t-5")).trail.at(-1)).toMatchObject({ action: "moved_out", new: "Renew the credit facility" });
-    expect((await board.task("t-4")).trail.at(-1)).toMatchObject({ action: "moved_in", old: "Prepare site visit data pack" });
+    expect((await board.task(arif, "t-5")).trail.at(-1)).toMatchObject({ action: "moved_out", new: "Renew the credit facility" });
+    expect((await board.task(arif, "t-4")).trail.at(-1)).toMatchObject({ action: "moved_in", old: "Prepare site visit data pack" });
   });
 
   it("removes without erasing: the Trail keeps the name and last link, and it can be restored", async () => {
     const doc = await board.addDocument(theran, "t-5", model);
     await board.removeDocument(theran, doc.id);
-    expect((await board.board("c-hbf")).documentCounts["t-5"]).toBeUndefined();
-    const { trail } = await board.task("t-5");
+    expect((await board.board(arif, "c-hbf")).documentCounts["t-5"]).toBeUndefined();
+    const { trail } = await board.task(arif, "t-5");
     expect(trail.at(-1)).toMatchObject({ action: "removed", old: model.url, new: model.name });
     await board.restoreDocument(theran, doc.id);
-    expect((await board.board("c-hbf")).documentCounts["t-5"]).toBe(1);
+    expect((await board.board(arif, "c-hbf")).documentCounts["t-5"]).toBe(1);
   });
 
   it("refuses values that aren't on the lists, even from a hand-made request", async () => {
@@ -248,7 +249,7 @@ describe("Areas", () => {
     await board.retireArea(arif, "a-hbf-systems", { areaId: null });
     const task = await store.getTask("t-7");
     expect(task).toMatchObject({ areaId: null, departmentId: "innovation" });
-    expect((await board.board("c-hbf")).areas.some((a) => a.id === "a-hbf-systems")).toBe(false);
+    expect((await board.board(arif, "c-hbf")).areas.some((a) => a.id === "a-hbf-systems")).toBe(false);
   });
 
   it("refuses a duplicate Area name in the same Department", async () => {
@@ -258,21 +259,21 @@ describe("Areas", () => {
 
 describe("views", () => {
   it("warns when more than a quarter of open Tasks are High", async () => {
-    expect((await board.board("c-hbf")).tooManyHigh).toBe(true); // 4 of 7 open
+    expect((await board.board(arif, "c-hbf")).tooManyHigh).toBe(true); // 4 of 7 open
   });
 
   it("puts Blocked first in the Partner summary and flags overdue", async () => {
-    const summary = await board.summary("c-hbf");
+    const summary = await board.summary(arif, "c-hbf");
     expect(summary.attention[0]!.id).toBe("t-4");
     expect(summary.overdue.map((t) => t.id)).toEqual([]); // nothing due before 4 October is open
     await board.moveTask(theran, "t-2", { status: "done" });
-    expect((await board.summary("c-hbf")).changes).toEqual([
+    expect((await board.summary(arif, "c-hbf")).changes).toEqual([
       expect.objectContaining({ task: expect.objectContaining({ id: "t-2" }), events: ["Moved to Done"] }),
     ]);
   });
 
   it("shows a Member's Tasks across Companies", async () => {
-    const mine = await board.myTasks("m-arif");
+    const mine = await board.myTasks({ memberId: "m-arif" });
     expect(new Set(mine.map((t) => t.companyId))).toEqual(new Set(["c-hbf", "c-sunridge"]));
   });
 });
@@ -284,11 +285,110 @@ describe("title hints", () => {
   });
 });
 
+const jordan: Actor = { memberId: "h-jordan", via: "screen" };
+
+describe("Managers and Shared Tasks (ADR 0005)", () => {
+  it("shows a Manager only their Company's Shared Tasks, everywhere", async () => {
+    const view = await board.board(jordan, "c-hbf");
+    expect(view.tasks.map((t) => t.id).sort()).toEqual(["t-1", "t-2", "t-6"]);
+    expect(view.areas.map((a) => a.name)).not.toContain("Reporting & controls");
+    const summary = await board.summary(jordan, "c-hbf");
+    const ids = [...summary.attention, ...summary.overdue, ...summary.rest].map((t) => t.id);
+    expect(ids.every((id) => ["t-1", "t-2", "t-6"].includes(id))).toBe(true);
+    expect((await board.myTasks(jordan)).map((t) => t.id).sort()).toEqual(["t-1", "t-2"]);
+  });
+
+  it("answers not found for a Task that isn't shared, so its existence isn't revealed", async () => {
+    await expectError(board.task(jordan, "t-4"), "not_found");
+    await expectError(board.updateTask(jordan, "t-4", { note: "x" }), "not_found");
+  });
+
+  it("never shows a Manager another Company, or Sunridge's own board", async () => {
+    expect((await board.companies(jordan)).map((c) => c.id)).toEqual(["c-hbf"]);
+    await expectError(board.board(jordan, "c-sunridge"), "not_found");
+  });
+
+  it("stops showing a Task the moment a Member stops sharing it", async () => {
+    await board.shareTask(arif, "t-6", false);
+    await expectError(board.task(jordan, "t-6"), "not_found");
+  });
+
+  it("lets a Manager update the Status, due date and note of a Shared Task they own", async () => {
+    const moved = await board.moveTask(jordan, "t-2", { status: "blocked", waitingOn: "Parts delivery" });
+    expect(moved).toMatchObject({ status: "blocked", note: "Parts delivery" });
+    const changed = await board.updateTask(jordan, "t-2", { due: "2026-10-20" });
+    expect(changed.due).toBe("2026-10-20");
+    const { trail } = await board.task(arif, "t-2");
+    expect(trail.some((e) => e.memberId === "h-jordan" && e.field === "status")).toBe(true);
+  });
+
+  it("refuses a Manager changes that stay with Sunridge", async () => {
+    await expectError(board.updateTask(jordan, "t-2", { priority: "low" }), "not_allowed");
+    await expectError(board.updateTask(jordan, "t-2", { ownerIds: ["h-jordan"] }), "not_allowed");
+    await expectError(board.moveTask(jordan, "t-2", { status: "next", areaId: "a-hbf-systems" }), "not_allowed");
+    await expectError(board.shareTask(jordan, "t-2", false), "not_allowed");
+    await expectError(board.removeTask(jordan, "t-2"), "not_allowed");
+    await expectError(board.createTask(jordan, newTask({ ownerIds: ["m-arif"], shared: true })), "not_allowed");
+    await expectError(board.joinTask(jordan, "t-6"), "not_allowed");
+    await expectError(board.createArea(jordan, { companyId: "c-hbf", departmentId: "sales", name: "Retail" }), "not_allowed");
+    await expectError(board.removedTasks(jordan, "c-hbf"), "not_allowed");
+  });
+
+  it("refuses a Manager changes to a Shared Task they don't own or help on", async () => {
+    await expectError(board.updateTask(jordan, "t-6", { note: "x" }), "not_allowed");
+  });
+
+  it("lets a Manager add Links, but not Files or Claude work", async () => {
+    const link = await board.addDocument(jordan, "t-2", { kind: "link", name: "Rates sheet", url: "https://example.com/rates" });
+    expect(link.kind).toBe("link");
+    await expectError(
+      board.addDocument(jordan, "t-2", { kind: "claude", name: "Analysis", url: "https://claude.ai/x" }),
+      "not_allowed",
+    );
+  });
+
+  it("never shares Talent & organisation or Finance", async () => {
+    await expectError(board.shareTask(jack, "t-4", true), "invalid");
+    await expectError(board.createTask(arif, newTask({ areaId: null, departmentId: "talent", shared: true })), "invalid");
+    await expectError(board.moveTask(theran, "t-1", { status: "now", areaId: "a-hbf-reporting" }), "invalid");
+  });
+
+  it("keeps a Member as Owner, and lets Managers own only Shared Tasks in their Company", async () => {
+    await expectError(board.updateTask(theran, "t-2", { ownerIds: ["h-jordan"] }), "invalid");
+    await expectError(board.updateTask(theran, "t-5", { contributorIds: ["h-jordan"] }), "invalid");
+    const task = await board.createTask(arif, newTask({ shared: true, ownerIds: ["m-arif", "h-jordan"] }));
+    expect(task.ownerIds).toEqual(["m-arif", "h-jordan"]);
+  });
+
+  it("takes Managers off a Task when it stops being shared, on the Trail", async () => {
+    const after = await board.shareTask(theran, "t-2", false);
+    expect(after).toMatchObject({ shared: false, ownerIds: ["m-theran"] });
+    const { trail } = await board.task(arif, "t-2");
+    expect(trail.some((e) => e.action === "unshared")).toBe(true);
+  });
+
+  it("won't move a Shared Task to another Company", async () => {
+    await expectError(board.changeCompany(theran, "t-2", { companyId: "c-sunridge", departmentId: "operations" }), "invalid");
+  });
+
+  it("tells a Manager whom to ask when Now is full", async () => {
+    for (const title of ["Draft the plan", "Book the visit", "Order new parts"]) {
+      await board.createTask(arif, newTask({ title, status: "now" }));
+    }
+    await expect(board.moveTask(jordan, "t-2", { status: "now" })).rejects.toThrow(/Ask Sunridge/);
+  });
+
+  it("refuses anyone the board doesn't know", async () => {
+    await expectError(board.board({ memberId: "nobody@example.com" }, "c-hbf"), "not_allowed");
+  });
+});
+
+
 /** A store whose task writes fail, to test the Trail's failure path. */
 class FailingStore implements Store {
   constructor(private inner: Store) {}
-  listMembers = () => this.inner.listMembers();
-  putMember = (m: Parameters<Store["putMember"]>[0]) => this.inner.putMember(m);
+  listPeople = () => this.inner.listPeople();
+  putPerson = (m: Parameters<Store["putPerson"]>[0]) => this.inner.putPerson(m);
   listCompanies = () => this.inner.listCompanies();
   listAreas = (id: string) => this.inner.listAreas(id);
   getArea = (id: string) => this.inner.getArea(id);

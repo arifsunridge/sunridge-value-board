@@ -1,13 +1,15 @@
+import { notFound } from "next/navigation";
 import { board } from "@/server/context";
-import { requireMember } from "@/server/session";
+import { requirePerson } from "@/server/session";
 import { AreasManager } from "@/ui/AreasManager";
 import { CompanyViews } from "@/ui/CompanyViews";
 
 export default async function AreasPage({ params }: { params: Promise<{ companyId: string }> }) {
   const { companyId } = await params;
-  await requireMember(`/c/${companyId}/areas`);
+  const me = await requirePerson(`/c/${companyId}/areas`);
+  if (me.kind !== "member") notFound();
   const b = board();
-  const [view, removed] = await Promise.all([b.board(companyId), b.removedTasks(companyId)]);
+  const [view, removed] = await Promise.all([b.board(me, companyId), b.removedTasks(me, companyId)]);
   return (
     <main>
       <div className="toolbar">

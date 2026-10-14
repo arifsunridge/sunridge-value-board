@@ -1,33 +1,46 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { Board } from "@/board/board";
 import { MemoryStore } from "./memory";
-import { ListsStore } from "./lists";
-import { LISTS } from "./lists-schema";
-import { AREAS, COMPANIES, MEMBERS, TASKS } from "./seed";
+import { MysqlStore } from "./mysql";
+import { AREAS, COMPANIES, PEOPLE, TASKS } from "./seed";
 import type { Store } from "./store";
-import { FakeGraphServer } from "@/test/fake-graph";
 
 async function seeded(store: Store): Promise<Store> {
-  for (const m of MEMBERS) await store.putMember(m);
+  for (const m of PEOPLE) await store.putPerson(m);
   for (const a of AREAS) await store.putArea(a);
   for (const t of TASKS) await store.putTask(t);
   return store;
 }
 
+const opened: MysqlStore[] = [];
+afterAll(async () => {
+  await Promise.all(opened.map((s) => s.close()));
+});
+
 const stores: [string, () => Promise<Store>][] = [
   ["memory", async () => seeded(new MemoryStore({ companies: COMPANIES }))],
-  [
-    "Microsoft Lists",
-    async () => {
-      const server = new FakeGraphServer(Object.values(LISTS).map((l) => l.name));
-      const companies = [...server.lists.values()].find((l) => l.displayName === LISTS.companies.name)!;
-      COMPANIES.forEach((c, i) =>
-        companies.items.push({ id: `c${i}`, fields: { Key: c.id, Name: c.name, Kind: c.kind, English: c.english, Order: c.order } }),
-      );
-      return seeded(new ListsStore(server.graph()));
-    },
-  ],
 ];
+
+// Set TEST_DB_HOST (and TEST_DB_USER, TEST_DB_PASSWORD, TEST_DB_NAME) to run the same checks on MySQL.
+// The tests drop and recreate the board's tables in that database: never point it at a real one.
+if (process.env.TEST_DB_HOST) {
+  stores.push([
+    "MySQL",
+    async () => {
+      const store = MysqlStore.connect({
+        host: process.env.TEST_DB_HOST,
+        port: Number(process.env.TEST_DB_PORT ?? 3306),
+        user: process.env.TEST_DB_USER ?? "root",
+        password: process.env.TEST_DB_PASSWORD ?? "",
+        database: process.env.TEST_DB_NAME ?? "value_board_test",
+      });
+      opened.push(store);
+      await store.dropAllForTests();
+      await store.init(COMPANIES);
+      return seeded(store);
+    },
+  ]);
+}
 
 describe.each(stores)("%s store", (_name, make) => {
   it("round-trips Tasks, including empty notes, arrays and nulls", async () => {
@@ -60,14 +73,14 @@ describe.each(stores)("%s store", (_name, make) => {
     await board.addDocument(actor, task.id, { kind: "link", name: "Checklist", url: "https://example.com/checklist" });
     await board.moveTask(actor, task.id, { status: "blocked", waitingOn: "Quality lead's sign-off" });
 
-    const detail = await board.task(task.id);
+    const detail = await board.task(actor, task.id);
     expect(detail.documents.map((d) => d.name)).toEqual(["Checklist"]);
     expect(detail.trail.map((e) => e.action)).toEqual(["created", "added", "moved", "changed"]);
-    expect((await board.summary("c-hbf")).changes.find((c) => c.task.id === task.id)?.events).toEqual([
+    expect((await board.summary(actor, "c-hbf")).changes.find((c) => c.task.id === task.id)?.events).toEqual([
       "Added",
       "Document added",
       "Moved to Blocked",
     ]);
-    expect((await board.board("c-hbf")).documentCounts[task.id]).toBe(1);
+    expect((await board.board(actor, "c-hbf")).documentCounts[task.id]).toBe(1);
   });
 });

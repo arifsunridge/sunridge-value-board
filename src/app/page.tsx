@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import { board } from "@/server/context";
-import { requireMember } from "@/server/session";
+import { requirePerson } from "@/server/session";
 
 export default async function Home() {
-  await requireMember("/");
-  const [first] = await board().companies();
+  const me = await requirePerson("/");
+  const [first] = await board().companies(me);
   redirect(first ? `/c/${first.id}` : "/my");
 }

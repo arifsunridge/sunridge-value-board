@@ -1,14 +1,14 @@
 import { board } from "@/server/context";
-import { requireMember } from "@/server/session";
+import { requirePerson } from "@/server/session";
 import { CompanyViews } from "@/ui/CompanyViews";
 import { TaskList } from "@/ui/TaskList";
 
 /** The Partner view: two minutes to judge execution before a call. */
 export default async function SummaryPage({ params }: { params: Promise<{ companyId: string }> }) {
   const { companyId } = await params;
-  await requireMember(`/c/${companyId}/summary`);
+  const me = await requirePerson(`/c/${companyId}/summary`);
   const b = board();
-  const [summary, members, view] = await Promise.all([b.summary(companyId), b.members(), b.board(companyId)]);
+  const [summary, members, view] = await Promise.all([b.summary(me, companyId), b.people(me), b.board(me, companyId)]);
   const today = b.today();
   const areas = view.areas;
   const notes = Object.fromEntries(summary.changes.map((c) => [c.task.id, c.events.join(" · ")]));
@@ -17,7 +17,7 @@ export default async function SummaryPage({ params }: { params: Promise<{ compan
     <main>
       <div className="toolbar">
         <h1 style={{ margin: 0 }}>{summary.company.name}: summary</h1>
-        <CompanyViews companyId={companyId} current="/summary" />
+        <CompanyViews companyId={companyId} current="/summary" isManager={me.kind === "manager"} />
       </div>
 
       <section>

@@ -1,4 +1,6 @@
-# Render Blueprint for the board (tech-stack.md). Secrets are set in the Render dashboard, never here.
+# Render service for the Sunridge Value Board, behind Cloudflare Access and the HBF Portal (ADR 0006).
+# Uses its own `value_board` database on the portal's Render MySQL, under its own login
+# (docs/setup.md). Secrets are set in the Render dashboard, never here.
 services:
   - type: web
     name: sunridge-value-board
@@ -7,33 +9,45 @@ services:
     plan: starter
     buildCommand: npm ci && npm run build
     startCommand: npm start
-    healthCheckPath: /signed-out
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: "22"
       - key: AUTH_MODE
-        value: entra
+        value: portal
       - key: STORE
-        value: lists
+        value: mysql
+      - key: APP_BASE_URL
+        value: https://hbf-value-board.sunridge.app
+      - key: CF_ACCESS_TEAM_DOMAIN
+        sync: false
+      - key: CF_ACCESS_AUD
+        sync: false
+      - key: PORTAL_INTERNAL_URL
+        sync: false
+      - key: PORTAL_SERVICE_TOKEN
+        sync: false
+      - key: PORTAL_APP_SLUG
+        value: value-board
+      - key: PORTAL_URL
+        value: https://hbf.sunridge.app
+      - key: PORTAL_COMPANY_ID
+        value: hbf
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "3306"
+      - key: DB_USER
+        value: value_board
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        value: value_board
       - key: CAPTURE_ENABLED
         value: "false" # switch on once spec question Q1 is answered
       - key: CLAUDE_ACCESS_ENABLED
-        value: "false" # switch on once spec question Q1 is answered (docs/setup.md, section 7)
-      - key: SESSION_SECRET
-        generateValue: true
-      - key: APP_BASE_URL
-        sync: false
-      - key: ENTRA_TENANT_ID
-        sync: false
-      - key: ENTRA_CLIENT_ID
-        sync: false
-      - key: ENTRA_CLIENT_SECRET
-        sync: false
-      - key: ENTRA_CERT_THUMBPRINT_SHA256
-        sync: false
-      - key: ENTRA_CERT_PRIVATE_KEY
-        sync: false
-      - key: SHAREPOINT_SITE_ID
-        sync: false
+        value: "false" # needs /mcp exempted from Cloudflare Access (docs/setup.md)
       - key: ANTHROPIC_API_KEY
         sync: false

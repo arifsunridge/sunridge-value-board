@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by 0006
 ---
 
 # The app writes board data under its own identity; Members can only read the site

@@ -1,5 +1,7 @@
 # Sunridge Value Board: tech stack proposal
 
+> **Changed 14 October 2026 ([ADR 0006](adr/0006-portal-sign-in-and-render-mysql.md)):** sign-in now goes through the HBF Portal (Cloudflare Access and `@arifsunridge/portal-kit`), and the data lives in the board's own MySQL database on Render, not in Microsoft Lists. SharePoint uploads are gone: Documents are links. The rest of this proposal (Next.js, `board/` holding every rule, the store interface, Claude through MCP) stands.
+
 **Status:** proposed · **Date:** 4 October 2026 · **Follows:** [spec](spec.md), [ADR 0001](adr/0001-sunridge-members-only.md), [ADR 0002](adr/0002-data-at-rest-inside-the-tenant.md), [ADR 0003](adr/0003-app-identity-writes-board-data.md) (new)
 
 ## In one paragraph
