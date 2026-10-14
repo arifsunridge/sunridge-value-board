@@ -57,7 +57,7 @@ describe("Claude endpoint: access", () => {
     });
   });
 
-  it("is for Members only: a company Manager is refused", async () => {
+  it("is for Members only: someone from the HBF team is refused", async () => {
     await expect(connect("dev:h-jordan")).rejects.toThrow();
   });
 

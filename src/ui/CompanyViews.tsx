@@ -11,14 +11,14 @@ const VIEWS = [
 export function CompanyViews({
   companyId,
   current,
-  isManager = false,
+  isCompanyTeam = false,
 }: {
   companyId: string;
   current: (typeof VIEWS)[number]["slug"];
   /** Capture and Areas are for Members only (ADR 0005). */
-  isManager?: boolean;
+  isCompanyTeam?: boolean;
 }) {
-  const views = isManager ? VIEWS.filter((v) => v.slug === "" || v.slug === "/summary") : VIEWS;
+  const views = isCompanyTeam ? VIEWS.filter((v) => v.slug === "" || v.slug === "/summary") : VIEWS;
   return (
     <div className="chips" role="navigation" aria-label="Views">
       {views.map((v) => (

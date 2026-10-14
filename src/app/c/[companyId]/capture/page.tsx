@@ -12,7 +12,7 @@ export default async function CapturePage({ params }: { params: Promise<{ compan
   if (!isMember(me)) notFound();
   const b = board();
   const [view, people] = await Promise.all([b.board(me, companyId), b.people(me)]);
-  // Capture suggests Owners from Members only; Managers are added to Shared Tasks on the board.
+  // Capture suggests Owners from Members only; the Company team is added to Shared Tasks on the board.
   const members = people.filter(isMember);
   const enabled = config().CAPTURE_ENABLED === "true";
   return (

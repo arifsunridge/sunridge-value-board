@@ -523,7 +523,7 @@ section {
   }
 }
 
-/* Shared with the company's Managers (ADR 0005): a quiet word on the card, like the Documents mark. */
+/* Shared with the company team (ADR 0005): a quiet word on the card, like the Documents mark. */
 .shared-mark {
   border: 1px solid var(--sage);
   color: var(--olive-dark);

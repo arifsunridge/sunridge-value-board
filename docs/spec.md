@@ -1,9 +1,9 @@
 # Sunridge Value Board: spec
 
 **Status:** draft for approval · **Author:** Arif (Analyst) · **Date:** 4 October 2026
-**Read with:** [GLOSSARY.md](../GLOSSARY.md), [ADR 0005](adr/0005-hbf-managers-see-shared-tasks.md), [ADR 0006](adr/0006-portal-sign-in-and-render-mysql.md)
+**Read with:** [GLOSSARY.md](../GLOSSARY.md), [ADR 0005](adr/0005-company-teams-see-shared-tasks.md), [ADR 0006](adr/0006-portal-sign-in-and-render-mysql.md)
 
-**Changed 14 October 2026:** HBF Managers can sign in and see Shared Tasks (ADR 0005, replacing ADR 0001), and the board runs as an HBF Portal app with its data in MySQL on Render (ADR 0006, replacing ADR 0002 and 0003). Where this spec says otherwise, the ADRs win. See P0.15.
+**Changed 14 October 2026:** The HBF team can sign in and see Shared Tasks (ADR 0005, replacing ADR 0001), and the board runs as an HBF Portal app with its data in MySQL on Render (ADR 0006, replacing ADR 0002 and 0003). Where this spec says otherwise, the ADRs win. See P0.15.
 
 ## 1. Problem
 
@@ -29,7 +29,7 @@ Each goal is measured from the Trail, so none needs manual tracking.
 
 ## 3. Non-goals
 
-- **No access for portfolio company staff beyond Shared Tasks** ([ADR 0005](adr/0005-hbf-managers-see-shared-tasks.md)). Managers see and update only what Members share with them; everything else reaches the board through Members.
+- **No access for portfolio company staff beyond Shared Tasks** ([ADR 0005](adr/0005-company-teams-see-shared-tasks.md)). The Company team sees and updates only what Members share with them; everything else reaches the board through Members.
 - **No file storage in the app** ([ADR 0002](adr/0002-data-at-rest-inside-the-tenant.md)). SharePoint holds files and their versions; the app holds links.
 - **No scoring, effort estimates or time tracking.** The score was noise; Priority plus a due date is enough.
 - **No project planning tools** (Gantt charts, dependencies between Tasks, sub-tasks). They add maintenance and nobody asked for them. A Task that needs sub-tasks is too big and should be split.
@@ -63,7 +63,7 @@ Each goal is measured from the Trail, so none needs manual tracking.
 
 **P0.1 Sign-in.** Through the HBF Portal (Cloudflare Access), as every portal app does ([ADR 0006](adr/0006-portal-sign-in-and-render-mysql.md)).
 - [ ] Anyone the portal hasn't granted the Value Board is refused with a plain message and a link to the portal.
-- [ ] Sunridge people are Members; HBF people are Managers; external people are refused, whatever the role in the portal.
+- [ ] Sunridge people are Members (portal role Sunridge team); HBF people are the Company team (portal role HBF team); external people are refused, whatever the role in the portal.
 
 **P0.2 Board.** Each Company has a board grouped by Department › Area, with Next / Now / Blocked / Done in each group. Tasks with no Area sit directly under their Department.
 - [ ] Drag and drop changes Status, and moves a Task between Areas within its Company.
@@ -115,11 +115,11 @@ Each goal is measured from the Trail, so none needs manual tracking.
 
 **P0.14 Prototype import.** A one-off import of the 4 October backup. Titles are cut to 8 words, owner names are moved out of titles into Owners, and Levers and Workstreams are dropped. Arif reviews every imported Task before it shows.
 
-**P0.15 Shared Tasks for Managers** ([ADR 0005](adr/0005-hbf-managers-see-shared-tasks.md)).
+**P0.15 Shared Tasks for the Company team** ([ADR 0005](adr/0005-company-teams-see-shared-tasks.md)).
 - [ ] A Member can mark a Task Shared, except in Talent & organisation and Finance. Shared is off by default and recorded in the Trail.
-- [ ] A Manager sees only their Company's Shared Tasks, on the board, the Summary and My Tasks. Any other Task answers "not found".
-- [ ] A Manager can own or contribute to a Shared Task, and on those can change Status, title, due date and note, and add Links. Every Task keeps at least one Member as Owner.
-- [ ] Stopping sharing takes Managers off the Task. A Shared Task can't change Company or move into Talent & organisation or Finance.
+- [ ] The Company team sees only its Company's Shared Tasks, on the board, the Summary and My Tasks. Any other Task answers "not found".
+- [ ] Someone in the Company team can own or contribute to a Shared Task, and on those can change Status, title, due date and note, and add Links. Every Task keeps at least one Member as Owner.
+- [ ] Stopping sharing takes the Company team off the Task. A Shared Task can't change Company or move into Talent & organisation or Finance.
 
 ### P1: soon after v1 (design for these now)
 

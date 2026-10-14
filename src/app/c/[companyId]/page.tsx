@@ -17,7 +17,7 @@ export default async function CompanyBoard({
   const { companyId } = await params;
   const { task: taskId, filter } = await searchParams;
   const me = await requirePerson(`/c/${companyId}`);
-  const isManager = me.kind === "manager";
+  const isCompanyTeam = me.kind === "company";
   const b = board();
 
   const view = await b.board(me, companyId).catch((e) => {
@@ -27,7 +27,7 @@ export default async function CompanyBoard({
   const [members, companies] = await Promise.all([b.people(me), b.companies(me)]);
 
   let panel: PanelData | null = null;
-  if (taskId === "new" && !isManager) {
+  if (taskId === "new" && !isCompanyTeam) {
     panel = { mode: "new" };
   } else if (taskId) {
     const detail = await b.task(me, taskId).catch(() => null);
@@ -50,9 +50,9 @@ export default async function CompanyBoard({
     <main>
       <div className="toolbar">
         <h1 style={{ margin: 0 }}>{view.company.name}</h1>
-        <CompanyViews companyId={companyId} current="" isManager={isManager} />
+        <CompanyViews companyId={companyId} current="" isCompanyTeam={isCompanyTeam} />
       </div>
-      <BoardScreen view={view} members={members} meId={me.id} isManager={isManager} today={b.today()} filter={filter ?? "all"} />
+      <BoardScreen view={view} members={members} meId={me.id} isCompanyTeam={isCompanyTeam} today={b.today()} filter={filter ?? "all"} />
       {panel && (
         <TaskPanel
           data={panel}
@@ -61,7 +61,7 @@ export default async function CompanyBoard({
           areas={view.areas}
           members={members}
           meId={me.id}
-          isManager={isManager}
+          isCompanyTeam={isCompanyTeam}
         />
       )}
     </main>

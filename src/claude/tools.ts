@@ -137,7 +137,7 @@ class Lookup {
       due: t.due,
       overdue: isOverdue(t, today),
       ...(t.status === "blocked" ? { waiting_on: t.note } : { note: t.note || null }),
-      shared_with_company_managers: t.shared,
+      shared_with_company_team: t.shared,
       you_can_change_it: t.ownerIds.includes(this.actor.memberId) || t.contributorIds.includes(this.actor.memberId),
       ...(t.removed ? { removed: true } : {}),
     };
@@ -392,9 +392,9 @@ export function boardServer(board: Board, actor: Actor): McpServer {
   server.registerTool(
     "share_task",
     {
-      title: "Share a Task with the company's Managers",
+      title: "Share a Task with the company team",
       description:
-        "Share a Task with its company's Managers (for HBF, its managers in the HBF Portal), or stop sharing it. Tasks in Talent & organisation or Finance can never be shared. Stopping takes Managers off the Task. Confirm with the person before sharing.",
+        "Share a Task with its company team (for HBF, the HBF team in the HBF Portal), or stop sharing it. Tasks in Talent & organisation or Finance can never be shared. Stopping takes the company team off the Task. Confirm with the person before sharing.",
       inputSchema: { task_id: z.string(), shared: z.boolean() },
       annotations: write,
     },

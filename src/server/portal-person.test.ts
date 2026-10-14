@@ -13,7 +13,7 @@ const who = { email: "Someone@Example.com", name: "Someone Example" };
 
 describe("who the HBF Portal's answer makes a Person (ADR 0005, 0006)", () => {
   it("makes Sunridge people Members, keyed by lower-cased email", () => {
-    expect(personFromPortal(who, allowed("sunridge", "Member"), "hbf")).toEqual({
+    expect(personFromPortal(who, allowed("sunridge", "Sunridge team"), "hbf")).toEqual({
       id: "someone@example.com",
       email: "someone@example.com",
       name: "Someone Example",
@@ -22,14 +22,14 @@ describe("who the HBF Portal's answer makes a Person (ADR 0005, 0006)", () => {
     });
   });
 
-  it("makes HBF people Managers of the portal's company", () => {
-    expect(personFromPortal(who, allowed("hbf", "Manager"), "hbf")).toMatchObject({ kind: "manager", companyId: "hbf" });
+  it("puts HBF people in the portal company's team", () => {
+    expect(personFromPortal(who, allowed("hbf", "HBF team"), "hbf")).toMatchObject({ kind: "company", companyId: "hbf" });
   });
 
   it("never lets a role override the audience", () => {
-    expect(personFromPortal(who, allowed("hbf", "Member"), "hbf")).toBe("audience");
-    expect(personFromPortal(who, allowed("sunridge", "Manager"), "hbf")).toBe("audience");
-    expect(personFromPortal(who, allowed("external", "Member"), "hbf")).toBe("audience");
+    expect(personFromPortal(who, allowed("hbf", "Sunridge team"), "hbf")).toBe("audience");
+    expect(personFromPortal(who, allowed("sunridge", "HBF team"), "hbf")).toBe("audience");
+    expect(personFromPortal(who, allowed("external", "Sunridge team"), "hbf")).toBe("audience");
     expect(personFromPortal(who, allowed("sunridge", null), "hbf")).toBe("audience");
   });
 

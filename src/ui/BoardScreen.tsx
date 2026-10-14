@@ -56,15 +56,15 @@ export function BoardScreen({
   view,
   members,
   meId,
-  isManager,
+  isCompanyTeam,
   today,
   filter,
 }: {
   view: BoardView;
   members: Person[];
   meId: string;
-  /** A Manager sees Shared Tasks only and moves them between Statuses, not Areas (ADR 0005). */
-  isManager: boolean;
+  /** The Company team sees Shared Tasks only and moves them between Statuses, not Areas (ADR 0005). */
+  isCompanyTeam: boolean;
   today: string;
   filter: string;
 }) {
@@ -124,7 +124,7 @@ export function BoardScreen({
     if (!task) return;
     const target = parseCell(String(event.over.id));
     if (target.status === task.status && target.departmentId === task.departmentId && target.areaId === task.areaId) return;
-    if (isManager && (target.departmentId !== task.departmentId || target.areaId !== task.areaId)) {
+    if (isCompanyTeam && (target.departmentId !== task.departmentId || target.areaId !== task.areaId)) {
       setError("Only Sunridge can move a Task to another Department or Area. Move it between Statuses instead.");
       return;
     }
@@ -153,7 +153,7 @@ export function BoardScreen({
           ))}
         </div>
         <span className="spacer" />
-        {isManager ? (
+        {isCompanyTeam ? (
           <span className="muted small">You see the Tasks Sunridge shares with {view.company.name}.</span>
         ) : (
           <Link className="button" href={`?task=new`} scroll={false}>
@@ -162,7 +162,7 @@ export function BoardScreen({
         )}
       </div>
 
-      {view.tooManyHigh && !isManager && (
+      {view.tooManyHigh && !isCompanyTeam && (
         <p className="banner">
           More than a quarter of {view.company.name}&apos;s open Tasks are High. Would each one really miss a Target, or
           expose the business, if it slipped a week?
@@ -186,7 +186,7 @@ export function BoardScreen({
                 </div>
               ))}
             </div>
-            {DEPARTMENTS.filter((d) => !isManager || canBeShared(d.id)).map((d) => (
+            {DEPARTMENTS.filter((d) => !isCompanyTeam || canBeShared(d.id)).map((d) => (
               <Department
                 key={d.id}
                 id={d.id}
@@ -196,7 +196,7 @@ export function BoardScreen({
                 filtered={filter !== "all"}
                 members={members}
                 meId={meId}
-                showShared={!isManager && view.company.kind === "portfolio"}
+                showShared={!isCompanyTeam && view.company.kind === "portfolio"}
                 today={today}
                 documentCounts={view.documentCounts}
                 onOpen={open}
@@ -266,7 +266,7 @@ function Department({
 interface CardContext {
   members: Person[];
   meId: string;
-  /** Members see which Tasks the company's Managers can see. */
+  /** Members see which Tasks the Company team can see. */
   showShared: boolean;
   today: string;
   documentCounts: Record<string, number>;
@@ -315,7 +315,7 @@ function Card({ task, members, meId, showShared, today, documentCounts, onOpen }
           task.status !== "done" && <span>No date</span>
         )}
         {showShared && task.shared ? (
-          <span className="shared-mark" title="Shared with the company's managers">
+          <span className="shared-mark" title="Shared with the company team">
             Shared
           </span>
         ) : null}

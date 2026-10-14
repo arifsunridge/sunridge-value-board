@@ -287,8 +287,8 @@ describe("title hints", () => {
 
 const jordan: Actor = { memberId: "h-jordan", via: "screen" };
 
-describe("Managers and Shared Tasks (ADR 0005)", () => {
-  it("shows a Manager only their Company's Shared Tasks, everywhere", async () => {
+describe("Company teams and Shared Tasks (ADR 0005)", () => {
+  it("shows the HBF team only its Company's Shared Tasks, everywhere", async () => {
     const view = await board.board(jordan, "c-hbf");
     expect(view.tasks.map((t) => t.id).sort()).toEqual(["t-1", "t-2", "t-6"]);
     expect(view.areas.map((a) => a.name)).not.toContain("Reporting & controls");
@@ -303,7 +303,7 @@ describe("Managers and Shared Tasks (ADR 0005)", () => {
     await expectError(board.updateTask(jordan, "t-4", { note: "x" }), "not_found");
   });
 
-  it("never shows a Manager another Company, or Sunridge's own board", async () => {
+  it("never shows the HBF team another Company, or Sunridge's own board", async () => {
     expect((await board.companies(jordan)).map((c) => c.id)).toEqual(["c-hbf"]);
     await expectError(board.board(jordan, "c-sunridge"), "not_found");
   });
@@ -313,7 +313,7 @@ describe("Managers and Shared Tasks (ADR 0005)", () => {
     await expectError(board.task(jordan, "t-6"), "not_found");
   });
 
-  it("lets a Manager update the Status, due date and note of a Shared Task they own", async () => {
+  it("lets the HBF team update the Status, due date and note of a Shared Task they own", async () => {
     const moved = await board.moveTask(jordan, "t-2", { status: "blocked", waitingOn: "Parts delivery" });
     expect(moved).toMatchObject({ status: "blocked", note: "Parts delivery" });
     const changed = await board.updateTask(jordan, "t-2", { due: "2026-10-20" });
@@ -322,7 +322,7 @@ describe("Managers and Shared Tasks (ADR 0005)", () => {
     expect(trail.some((e) => e.memberId === "h-jordan" && e.field === "status")).toBe(true);
   });
 
-  it("refuses a Manager changes that stay with Sunridge", async () => {
+  it("refuses the HBF team changes that stay with Sunridge", async () => {
     await expectError(board.updateTask(jordan, "t-2", { priority: "low" }), "not_allowed");
     await expectError(board.updateTask(jordan, "t-2", { ownerIds: ["h-jordan"] }), "not_allowed");
     await expectError(board.moveTask(jordan, "t-2", { status: "next", areaId: "a-hbf-systems" }), "not_allowed");
@@ -334,11 +334,11 @@ describe("Managers and Shared Tasks (ADR 0005)", () => {
     await expectError(board.removedTasks(jordan, "c-hbf"), "not_allowed");
   });
 
-  it("refuses a Manager changes to a Shared Task they don't own or help on", async () => {
+  it("refuses the HBF team changes to a Shared Task they don't own or help on", async () => {
     await expectError(board.updateTask(jordan, "t-6", { note: "x" }), "not_allowed");
   });
 
-  it("lets a Manager add Links, but not Files or Claude work", async () => {
+  it("lets the HBF team add Links, but not Files or Claude work", async () => {
     const link = await board.addDocument(jordan, "t-2", { kind: "link", name: "Rates sheet", url: "https://example.com/rates" });
     expect(link.kind).toBe("link");
     await expectError(
@@ -353,14 +353,14 @@ describe("Managers and Shared Tasks (ADR 0005)", () => {
     await expectError(board.moveTask(theran, "t-1", { status: "now", areaId: "a-hbf-reporting" }), "invalid");
   });
 
-  it("keeps a Member as Owner, and lets Managers own only Shared Tasks in their Company", async () => {
+  it("keeps a Member as Owner, and lets the HBF team own only Shared Tasks in their Company", async () => {
     await expectError(board.updateTask(theran, "t-2", { ownerIds: ["h-jordan"] }), "invalid");
     await expectError(board.updateTask(theran, "t-5", { contributorIds: ["h-jordan"] }), "invalid");
     const task = await board.createTask(arif, newTask({ shared: true, ownerIds: ["m-arif", "h-jordan"] }));
     expect(task.ownerIds).toEqual(["m-arif", "h-jordan"]);
   });
 
-  it("takes Managers off a Task when it stops being shared, on the Trail", async () => {
+  it("takes the HBF team off a Task when it stops being shared, on the Trail", async () => {
     const after = await board.shareTask(theran, "t-2", false);
     expect(after).toMatchObject({ shared: false, ownerIds: ["m-theran"] });
     const { trail } = await board.task(arif, "t-2");
@@ -371,7 +371,7 @@ describe("Managers and Shared Tasks (ADR 0005)", () => {
     await expectError(board.changeCompany(theran, "t-2", { companyId: "c-sunridge", departmentId: "operations" }), "invalid");
   });
 
-  it("tells a Manager whom to ask when Now is full", async () => {
+  it("tells the HBF team whom to ask when Now is full", async () => {
     for (const title of ["Draft the plan", "Book the visit", "Order new parts"]) {
       await board.createTask(arif, newTask({ title, status: "now" }));
     }

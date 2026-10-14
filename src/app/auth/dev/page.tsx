@@ -28,7 +28,7 @@ export default async function DevSignIn({ searchParams }: { searchParams: Promis
         {people.map((p) => (
           <button key={p.id} name="personId" value={p.id} className="button secondary">
             {p.name}
-            {p.kind === "manager" ? " (company manager)" : ""}
+            {p.kind === "company" ? " (HBF team)" : ""}
           </button>
         ))}
       </form>

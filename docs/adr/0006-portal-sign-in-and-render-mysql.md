@@ -7,7 +7,7 @@ supersedes: 0002, 0003
 
 The board runs like the other portal apps (decided by Arif on 14 October 2026). People sign in once through Cloudflare Access in front of the HBF Portal, and the board checks the Access token and asks the portal whether this person may use it, and as which role (`@arifsunridge/portal-kit`). The board's data lives in its own `value_board` database on the portal's Render MySQL, under its own database user.
 
-We chose this over keeping Microsoft Lists in the Sunridge tenant (ADR 0002 and 0003) for two reasons. Managers at HBF can't sign in with Sunridge's Microsoft tenant, and the portal already signs them in. And the Lists route was still waiting on IT to grant `Sites.Selected`, with no date.
+We chose this over keeping Microsoft Lists in the Sunridge tenant (ADR 0002 and 0003) for two reasons. The HBF team can't sign in with Sunridge's Microsoft tenant, and the portal already signs them in. And the Lists route was still waiting on IT to grant `Sites.Selected`, with no date.
 
 ## Considered options
 

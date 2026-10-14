@@ -90,9 +90,9 @@ export function describe(entry: TrailEntry, members: Person[], names: Record<str
     case "joined":
       return `${who} joined as a Contributor${via}`;
     case "shared":
-      return `${who} shared this Task with the company's managers${via}`;
+      return `${who} shared this Task with the company team${via}`;
     case "unshared":
-      return `${who} stopped sharing this Task with the company's managers${via}`;
+      return `${who} stopped sharing this Task with the company team${via}`;
     default:
       return `${who} changed the ${FIELD_LABELS[entry.field ?? ""] ?? entry.field} from ${v(entry.old)} to ${v(entry.new)}${via}`;
   }

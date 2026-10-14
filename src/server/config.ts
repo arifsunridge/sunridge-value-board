@@ -20,7 +20,7 @@ const schema = z
     PORTAL_APP_SLUG: z.string().default("value-board"),
     /** The portal's own address, for links back to it. */
     PORTAL_URL: z.string().url().default("https://hbf.sunridge.app"),
-    /** The Company whose Managers sign in through this portal (the HBF Portal: HBF). */
+    /** The Company whose team signs in through this portal (the HBF Portal: HBF). */
     PORTAL_COMPANY_ID: z.string().default("hbf"),
 
     DB_HOST: z.string().optional(),

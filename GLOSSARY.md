@@ -31,7 +31,7 @@ Where a Task stands: Next, Now, Blocked or Done. Each Company has at most five T
 _Avoid_: Stage, state, column, lane, "in progress", "to do"
 
 **Shared**:
-A Task a Member has opened to its Company's Managers. No Task is Shared until a Member says so, and Tasks in Talent & organisation or Finance are never Shared.
+A Task a Member has opened to its Company team. No Task is Shared until a Member says so, and Tasks in Talent & organisation or Finance are never Shared.
 _Avoid_: Public, visible, external, published
 
 **Priority**:
@@ -66,23 +66,23 @@ _Avoid_: Draft task, candidate, proposal, AI task
 ## People
 
 **Person**:
-Anyone who can sign in to the board: a Member or a Manager.
+Anyone who can sign in to the board: a Member, or someone in a Company team.
 _Avoid_: User, account
 
 **Member**:
-A Sunridge employee who signs in. Members see every Task of every Company.
+A Sunridge employee who signs in. Members see every Task of every Company. In the HBF Portal their role is **Sunridge team**.
 _Avoid_: User, account, team member, guest
 
-**Manager**:
-Someone at a portfolio company whom a portal admin has let into that Company's board. A Manager sees only that Company's Shared Tasks, and changes only the Shared Tasks they own or contribute to.
-_Avoid_: Guest, client, external user, company staff
+**Company team**:
+The people at a portfolio company whom a portal admin has let into that Company's board, such as the HBF team. They see only that Company's Shared Tasks, and change only the Shared Tasks they own or contribute to. In the HBF Portal their role is **HBF team**.
+_Avoid_: Manager, guest, client, external user, company staff
 
 **Owner**:
-A Person accountable for a Task. Every Task has at least one Owner who is a Member, and can have several. A Manager can own only a Shared Task in their own Company.
+A Person accountable for a Task. Every Task has at least one Owner who is a Member, and can have several. Someone in a Company team can own only a Shared Task in their own Company.
 _Avoid_: Assignee, lead, responsible, DRI
 
 **Contributor**:
-A Person who helps on a Task without being accountable for it. Contributors can change the Task and its Documents, just as Owners can. A Manager can contribute only to a Shared Task in their own Company.
+A Person who helps on a Task without being accountable for it. Contributors can change the Task and its Documents, just as Owners can. Someone in a Company team can contribute only to a Shared Task in their own Company.
 _Avoid_: Helper, collaborator, support, assignee
 
 **Viewer**:

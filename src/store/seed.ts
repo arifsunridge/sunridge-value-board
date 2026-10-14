@@ -9,8 +9,8 @@ export const PEOPLE: Person[] = [
   { id: "m-jack", name: "Jack Example", email: "jack@example.com", kind: "member", companyId: null },
   { id: "m-hugues", name: "Hugues Example", email: "hugues@example.com", kind: "member", companyId: null },
   { id: "m-philipp", name: "Philipp Example", email: "philipp@example.com", kind: "member", companyId: null },
-  // An invented HBF Manager (ADR 0005), for local work and tests.
-  { id: "h-jordan", name: "Jordan Example", email: "jordan@hbf.example", kind: "manager", companyId: "c-hbf" },
+  // An invented person in the HBF team (ADR 0005), for local work and tests.
+  { id: "h-jordan", name: "Jordan Example", email: "jordan@hbf.example", kind: "company", companyId: "c-hbf" },
 ];
 
 export const COMPANIES: Company[] = [
