@@ -3,7 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 import { Nav } from "@/ui/Nav";
 import { board } from "@/server/context";
-import { session } from "@/server/session";
+import { config } from "@/server/config";
+import { currentPerson } from "@/server/session";
 
 export const metadata: Metadata = {
   title: "Sunridge Value Board",
@@ -11,8 +12,9 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const member = (await session()).member;
-  const companies = member ? await board().companies() : [];
+  const me = await currentPerson();
+  const companies = me ? await board().companies(me) : [];
+  const portalUrl = config().AUTH_MODE === "portal" ? config().PORTAL_URL : null;
   return (
     <html lang="en-GB">
       <body>
@@ -20,11 +22,16 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Link className="brand" href="/">
             Sunridge Value Board
           </Link>
-          {member && (
+          {me && (
             <>
               <Nav companies={companies.map((c) => ({ id: c.id, name: c.name }))} />
               <div className="who">
-                <span>{member.name}</span>
+                <span>{me.name}</span>
+                {portalUrl && (
+                  <a className="button quiet small" href={portalUrl}>
+                    HBF Portal
+                  </a>
+                )}
                 <form action="/auth/signout" method="post">
                   <button className="button quiet small">Sign out</button>
                 </form>

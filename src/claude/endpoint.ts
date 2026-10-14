@@ -1,6 +1,6 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Board } from "@/board/board";
-import type { Member } from "@/board/model";
+import type { Person } from "@/board/model";
 import { AccessDenied, BOARD_SCOPE, memberFromToken } from "./auth";
 import { boardServer } from "./tools";
 
@@ -15,7 +15,7 @@ export interface EndpointOptions {
   /** Local work only: accept "Bearer dev:<member id>". Config refuses dev sign-in in production. */
   devTokens: boolean;
   /** Overrides token checking (tests). */
-  verify?: (token: string) => Promise<Member>;
+  verify?: (token: string) => Promise<Person>;
 }
 
 export const MCP_PATH = "/mcp";
@@ -53,12 +53,12 @@ function challenge(o: EndpointOptions, error?: AccessDenied): Response {
   });
 }
 
-async function member(token: string, o: EndpointOptions): Promise<Member> {
+async function member(token: string, o: EndpointOptions): Promise<Person> {
   if (o.verify) return o.verify(token);
   if (o.devTokens && token.startsWith("dev:")) {
-    const found = (await o.board.members()).find((m) => m.id === token.slice(4));
-    if (!found) throw new AccessDenied("No such Member.", "invalid");
-    return found;
+    return o.board.me({ memberId: token.slice(4) }).catch(() => {
+      throw new AccessDenied("No such Member.", "invalid");
+    });
   }
   if (!o.tenantId || !o.clientId) throw new AccessDenied("Claude access isn't configured.", "invalid");
   return memberFromToken(token, { tenantId: o.tenantId, clientId: o.clientId, resource: resource(o.baseUrl) });
@@ -75,14 +75,16 @@ export async function handleMcp(request: Request, o: EndpointOptions): Promise<R
   const token = header.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) return challenge(o);
 
-  let who: Member;
+  let who: Person;
   try {
     who = await member(token, o);
   } catch (error) {
     if (error instanceof AccessDenied) return challenge(o, error);
     throw error;
   }
-  await o.board.recordMember(who);
+  // Claude access is for Members only (ADR 0005): Managers use the screen.
+  if (who.kind !== "member") return challenge(o, new AccessDenied("Claude access is for Sunridge Members only.", "invalid"));
+  await o.board.recordPerson(who);
 
   const server = boardServer(o.board, { memberId: who.id, via: "claude" });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

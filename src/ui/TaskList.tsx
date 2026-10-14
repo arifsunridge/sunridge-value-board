@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { isOverdue } from "@/board/board";
-import { PRIORITY_LABELS, STATUS_LABELS, departmentName, type Area, type Member, type Task } from "@/board/model";
+import { PRIORITY_LABELS, STATUS_LABELS, departmentName, type Area, type Person, type Task } from "@/board/model";
 import { formatDay, peopleNames } from "./format";
 
 /** A plain list of Tasks, for reading rather than moving: the Summary and My Tasks. */
@@ -13,7 +13,7 @@ export function TaskList({
   empty = "Nothing here.",
 }: {
   tasks: Task[];
-  members: Member[];
+  members: Person[];
   areas: Area[];
   today: string;
   notes?: Record<string, string>;

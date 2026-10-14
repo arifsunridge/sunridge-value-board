@@ -8,10 +8,20 @@ const VIEWS = [
 ] as const;
 
 /** Switches between a Company's views. */
-export function CompanyViews({ companyId, current }: { companyId: string; current: (typeof VIEWS)[number]["slug"] }) {
+export function CompanyViews({
+  companyId,
+  current,
+  isManager = false,
+}: {
+  companyId: string;
+  current: (typeof VIEWS)[number]["slug"];
+  /** Capture and Areas are for Members only (ADR 0005). */
+  isManager?: boolean;
+}) {
+  const views = isManager ? VIEWS.filter((v) => v.slug === "" || v.slug === "/summary") : VIEWS;
   return (
     <div className="chips" role="navigation" aria-label="Views">
-      {VIEWS.map((v) => (
+      {views.map((v) => (
         <Link key={v.slug} href={`/c/${companyId}${v.slug}`} className="chip" aria-current={v.slug === current ? "page" : undefined}>
           {v.label}
         </Link>

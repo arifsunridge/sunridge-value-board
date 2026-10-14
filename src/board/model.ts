@@ -37,11 +37,21 @@ export const TITLE_MAX_WORDS = 8;
 export const NOTE_MAX_CHARS = 200;
 export const NOTE_MAX_LINES = 2;
 
-export interface Member {
-  id: string; // Entra object ID
+/** A Member works at Sunridge; a Manager works at a portfolio company (ADR 0005). */
+export type PersonKind = "member" | "manager";
+
+export interface Person {
+  /** The lower-cased email the HBF Portal verified (ADR 0006). */
+  id: string;
   name: string;
   email: string;
+  kind: PersonKind;
+  /** A Manager's Company. Always null for a Member. */
+  companyId: string | null;
 }
+
+/** Talent & organisation and Finance hold people, financing and exit work. Their Tasks are never Shared. */
+export const NEVER_SHARED: readonly DepartmentId[] = ["talent", "finance"];
 
 export interface Company {
   id: string;
@@ -73,6 +83,8 @@ export interface Task {
   /** ISO date, YYYY-MM-DD. */
   due: string | null;
   note: string;
+  /** Visible to the Company's Managers (ADR 0005). Off unless a Member turns it on. */
+  shared: boolean;
   removed: boolean;
   /** v2: the Lever this Task supports. Always null in v1. */
   leverId: string | null;
@@ -120,6 +132,20 @@ export function departmentName(id: DepartmentId): string {
 
 export function isDepartmentId(value: string): value is DepartmentId {
   return DEPARTMENTS.some((d) => d.id === value);
+}
+
+export function isMember(person: Pick<Person, "kind">): boolean {
+  return person.kind === "member";
+}
+
+export function canBeShared(departmentId: DepartmentId): boolean {
+  return !NEVER_SHARED.includes(departmentId);
+}
+
+/** Whether this Person may see this Task at all. Members see everything; Managers see their Company's Shared Tasks. */
+export function canSee(person: Person, task: Task): boolean {
+  if (isMember(person)) return true;
+  return task.shared && !task.removed && task.companyId === person.companyId && canBeShared(task.departmentId);
 }
 
 export function isOpen(task: Task): boolean {

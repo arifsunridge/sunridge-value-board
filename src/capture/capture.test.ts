@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { clean, userPrompt } from "./capture";
-import { AREAS, COMPANIES, MEMBERS } from "@/store/seed";
+import { AREAS, COMPANIES, PEOPLE } from "@/store/seed";
 
 describe("Capture", () => {
   it("drops unknown Owners and Areas, bad dates and extra note lines", () => {
@@ -16,7 +16,7 @@ describe("Capture", () => {
           note: "First line\nsecond line",
         },
       ],
-      { areas: AREAS, members: MEMBERS },
+      { areas: AREAS, members: PEOPLE },
     );
     expect(s).toEqual({
       title: "Confirm the line start date",
@@ -30,7 +30,7 @@ describe("Capture", () => {
   });
 
   it("tells Claude the company's English and lists only Members as Owners", () => {
-    const prompt = userPrompt({ company: COMPANIES[0]!, areas: AREAS.filter((a) => a.companyId === "c-hbf"), members: MEMBERS, meetingDate: "2026-10-02", notes: "…" });
+    const prompt = userPrompt({ company: COMPANIES[0]!, areas: AREAS.filter((a) => a.companyId === "c-hbf"), members: PEOPLE, meetingDate: "2026-10-02", notes: "…" });
     expect(prompt).toContain("US English");
     expect(prompt).toContain("m-theran = Theran Example");
     expect(prompt).toContain("a-hbf-manufacturing = Manufacturing");

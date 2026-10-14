@@ -2,13 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { confirm, suggest } from "@/app/c/[companyId]/capture/actions";
-import { DEPARTMENTS, PRIORITIES, PRIORITY_LABELS, type Area, type Company, type Member } from "@/board/model";
+import { DEPARTMENTS, PRIORITIES, PRIORITY_LABELS, type Area, type Company, type Person } from "@/board/model";
 import { titleHints, words } from "@/board/rules";
 import type { Suggestion } from "@/capture/capture";
 
 type Row = Suggestion & { key: number; state: "open" | "saving" | "added" | "discarded"; error?: string };
 
-export function CaptureScreen({ company, areas, members, today }: { company: Company; areas: Area[]; members: Member[]; today: string }) {
+export function CaptureScreen({ company, areas, members, today }: { company: Company; areas: Area[]; members: Person[]; today: string }) {
   const [notes, setNotes] = useState("");
   const [meetingDate, setMeetingDate] = useState(today);
   const [rows, setRows] = useState<Row[]>([]);
@@ -92,7 +92,7 @@ function SuggestionRow({
 }: {
   row: Row;
   areas: Area[];
-  members: Member[];
+  members: Person[];
   onChange: (patch: Partial<Row>) => void;
   onConfirm: () => void;
   onDiscard: () => void;

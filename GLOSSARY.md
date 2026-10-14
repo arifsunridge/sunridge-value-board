@@ -30,6 +30,10 @@ _Avoid_: Action, to-do, item, card (a card is how a Task is drawn, not what it i
 Where a Task stands: Next, Now, Blocked or Done. Each Company has at most five Tasks in Now, however they are shared between people.
 _Avoid_: Stage, state, column, lane, "in progress", "to do"
 
+**Shared**:
+A Task a Member has opened to its Company's Managers. No Task is Shared until a Member says so, and Tasks in Talent & organisation or Finance are never Shared.
+_Avoid_: Public, visible, external, published
+
 **Priority**:
 How much a Task matters: High, Medium or Low, decided by the one-week slip test.
 - **High**: if it slips a week, a Target or Lever misses, or the business is exposed (cash, lenders, a key customer, safety, compliance).
@@ -61,20 +65,28 @@ _Avoid_: Draft task, candidate, proposal, AI task
 
 ## People
 
+**Person**:
+Anyone who can sign in to the board: a Member or a Manager.
+_Avoid_: User, account
+
 **Member**:
-A Sunridge employee who can sign in. Only Members ever have access, whatever the Company.
+A Sunridge employee who signs in. Members see every Task of every Company.
 _Avoid_: User, account, team member, guest
 
+**Manager**:
+Someone at a portfolio company whom a portal admin has let into that Company's board. A Manager sees only that Company's Shared Tasks, and changes only the Shared Tasks they own or contribute to.
+_Avoid_: Guest, client, external user, company staff
+
 **Owner**:
-A Member accountable for a Task. Every Task has at least one Owner and can have several.
+A Person accountable for a Task. Every Task has at least one Owner who is a Member, and can have several. A Manager can own only a Shared Task in their own Company.
 _Avoid_: Assignee, lead, responsible, DRI
 
 **Contributor**:
-A Member who helps on a Task without being accountable for it. Contributors can change the Task and its Documents, just as Owners can.
+A Person who helps on a Task without being accountable for it. Contributors can change the Task and its Documents, just as Owners can. A Manager can contribute only to a Shared Task in their own Company.
 _Avoid_: Helper, collaborator, support, assignee
 
 **Viewer**:
-A Member who is neither an Owner nor a Contributor on a Task. Partners are Viewers unless they are added to a Task.
+A Person who is neither an Owner nor a Contributor on a Task. Partners are Viewers unless they are added to a Task.
 _Avoid_: Reader, observer, follower
 
 ## The plan (v2)

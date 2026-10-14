@@ -6,7 +6,8 @@ import { BoardError } from "@/board/rules";
 import { CaptureError, suggestTasks, type Suggestion } from "@/capture/capture";
 import { config } from "@/server/config";
 import { board } from "@/server/context";
-import { requireMember } from "@/server/session";
+import { isMember } from "@/board/model";
+import { requirePerson } from "@/server/session";
 import { formatDay } from "@/ui/format";
 
 const MAX_NOTES = 60_000;
@@ -16,14 +17,16 @@ export async function suggest(
   meetingDate: string,
   notes: string,
 ): Promise<{ ok: true; suggestions: Suggestion[] } | { ok: false; message: string }> {
-  await requireMember();
+  const me = await requirePerson();
+  if (!isMember(me)) return { ok: false, message: "Capture is for Sunridge Members." };
   const c = config();
   if (c.CAPTURE_ENABLED !== "true") return { ok: false, message: "Capture is switched off for now. Add Tasks from the board." };
   if (!notes.trim()) return { ok: false, message: "Paste the meeting notes first." };
   if (notes.length > MAX_NOTES) return { ok: false, message: "Those notes are very long. Paste them in parts." };
   const b = board();
   try {
-    const [company, view, members] = await Promise.all([b.company(companyId), b.board(companyId), b.members()]);
+    const [company, view, people] = await Promise.all([b.company(me, companyId), b.board(me, companyId), b.people(me)]);
+    const members = people.filter(isMember);
     const suggestions = await suggestTasks(new Anthropic({ apiKey: c.ANTHROPIC_API_KEY }), {
       company,
       areas: view.areas,
@@ -45,7 +48,7 @@ export async function confirm(
   meetingDate: string,
   s: Suggestion,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const me = await requireMember();
+  const me = await requirePerson();
   try {
     await board().createTask(
       { memberId: me.id, via: "capture" },

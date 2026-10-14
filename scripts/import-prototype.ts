@@ -4,16 +4,14 @@
  *
  *   npm run import -- prepare <backup.json> --members private/members.json --out private/review.json
  *   (edit review.json: fix titles, owners and priority; set "approved": true)
- *   npm run import -- apply private/review.json --as <your member id>
+ *   npm run import -- apply private/review.json --as <your email>
  *
  * Keep backups and review files in private/ (git-ignored). They hold real company data.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { Board } from "@/board/board";
-import type { Config } from "@/server/config";
-import { Graph } from "@/server/graph";
-import { ListsStore } from "@/store/lists";
+import { MysqlStore } from "@/store/mysql";
 import { prepare, type Backup, type ReviewItem } from "./prototype";
 
 async function main() {
@@ -26,7 +24,7 @@ async function main() {
   if (step === "prepare" && file) {
     if (!values.members || !values.out) throw new Error("prepare needs --members and --out.");
     const backup = JSON.parse(readFileSync(file, "utf8")) as Backup;
-    // members.json: { "Arif": "<member id>", "u_prototypeUserId": "<member id>", ... }
+    // members.json: { "Arif": "<email>", "u_prototypeUserId": "<email>", ... }. A Person's id is their lower-cased email (ADR 0006).
     const members = JSON.parse(readFileSync(values.members, "utf8")) as Record<string, string>;
     const items = prepare(backup, { members, companies: { "p-hbf": "HBF", "p-sunridge": "Sunridge" } });
     writeFileSync(values.out, JSON.stringify(items, null, 2));
@@ -35,18 +33,26 @@ async function main() {
   }
 
   if (step === "apply" && file) {
-    if (!values.as) throw new Error("apply needs --as <your member id>.");
+    if (!values.as) throw new Error("apply needs --as <your email>. Sign in to the board once first, so it knows you.");
     const items = (JSON.parse(readFileSync(file, "utf8")) as ReviewItem[]).filter((i) => i.approved);
-    const store = new ListsStore(Graph.fromConfig(process.env as unknown as Config));
+    const env = process.env;
+    if (!env.DB_HOST) throw new Error("apply needs DB_HOST (and DB_USER, DB_PASSWORD, DB_NAME) for the board's MySQL database.");
+    const store = MysqlStore.connect({
+      host: env.DB_HOST,
+      port: Number(env.DB_PORT ?? 3306),
+      user: env.DB_USER ?? "value_board",
+      password: env.DB_PASSWORD ?? "",
+      database: env.DB_NAME ?? "value_board",
+    });
     const board = new Board(store);
     const actor = { memberId: values.as, via: "import" as const };
-    const companies = await board.companies();
+    const companies = await board.companies(actor);
     for (const item of items) {
       const company = companies.find((c) => c.name === item.company);
-      if (!company) throw new Error(`No company called ${item.company}. Run the provisioning script first.`);
+      if (!company) throw new Error(`No company called ${item.company} on the board.`);
       let areaId: string | null = null;
       if (item.area) {
-        const areas = (await board.board(company.id)).areas;
+        const areas = (await board.board(actor, company.id)).areas;
         areaId =
           areas.find((a) => a.name === item.area && a.departmentId === item.departmentId)?.id ??
           (await board.createArea(actor, { companyId: company.id, departmentId: item.departmentId, name: item.area })).id;
@@ -68,11 +74,12 @@ async function main() {
       }
       console.log(`Imported: ${task.title}`);
     }
+    await store.close();
     console.log(`Done: ${items.length} Tasks.`);
     return;
   }
 
-  throw new Error("Use: import-prototype prepare <backup.json> --members <file> --out <file> | apply <review.json> --as <member id>");
+  throw new Error("Use: import-prototype prepare <backup.json> --members <file> --out <file> | apply <review.json> --as <your email>");
 }
 
 main().catch((error) => {

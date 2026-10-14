@@ -15,12 +15,13 @@ import {
   STATUSES,
   STATUS_LABELS,
   TITLE_MAX_WORDS,
+  canBeShared,
   departmentName,
   type Area,
   type Company,
   type Document,
   type DocumentStatus,
-  type Member,
+  type Person,
   type Priority,
   type Status,
   type Task,
@@ -46,8 +47,10 @@ interface Props {
   company: Company;
   companies: Company[];
   areas: Area[];
-  members: Member[];
+  members: Person[];
   meId: string;
+  /** Members keep everything; a Manager changes only a few fields of their own Shared Tasks (ADR 0005). */
+  isManager: boolean;
 }
 
 type Result = Awaited<ReturnType<typeof actions.updateTask>>;
@@ -92,6 +95,29 @@ export function TaskPanel(props: Props) {
 }
 
 // ---------- shared fields ----------
+
+/** Members, plus this company's Managers when the Task is Shared. */
+function eligible(members: Person[], companyId: string, shared: boolean): Person[] {
+  return members.filter((p) => p.kind === "member" || (shared && p.companyId === companyId));
+}
+
+function SharedField({ company, departmentId, value, onChange }: { company: Company; departmentId: string; value: boolean; onChange: (v: boolean) => void }) {
+  if (company.kind !== "portfolio") return null;
+  const allowed = canBeShared(departmentId as Parameters<typeof canBeShared>[0]);
+  return (
+    <div className="field">
+      <label className="check">
+        <input type="checkbox" checked={value && allowed} disabled={!allowed} onChange={(e) => onChange(e.target.checked)} />
+        Share with {company.name}’s managers
+      </label>
+      <div className="hint">
+        {allowed
+          ? `${company.name}’s managers in the portal will see this Task, and can own or help on it.`
+          : "Talent & organisation and Finance are never shared."}
+      </div>
+    </div>
+  );
+}
 
 function homeValue(departmentId: string, areaId: string | null) {
   return areaId ? `area:${areaId}` : `dept:${departmentId}`;
@@ -170,7 +196,7 @@ function PeopleField({
   disabled,
 }: {
   label: string;
-  members: Member[];
+  members: Person[];
   value: string[];
   onChange: (v: string[]) => void;
   exclude?: string[];
@@ -228,7 +254,12 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
   const [contributors, setContributors] = useState<string[]>([]);
   const [due, setDue] = useState("");
   const [note, setNote] = useState("");
+  const [shared, setShared] = useState(false);
   const { error, pending, run } = useAction();
+  const { departmentId } = parseHome(home, areas);
+  const isShared = shared && company.kind === "portfolio" && canBeShared(departmentId as Parameters<typeof canBeShared>[0]);
+  const people = eligible(members, company.id, isShared);
+  const keep = (ids: string[]) => ids.filter((id) => people.some((p) => p.id === id));
 
   return (
     <form
@@ -241,10 +272,11 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
               ...parseHome(home, areas),
               title,
               priority,
-              ownerIds: owners,
-              contributorIds: contributors,
+              ownerIds: keep(owners),
+              contributorIds: keep(contributors),
               due: due || null,
               note,
+              shared: isShared,
             }),
           (r) => r.id && onDone(r.id),
         );
@@ -257,10 +289,11 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
         <label htmlFor="home">Where it lives</label>
         <HomeSelect id="home" areas={areas} value={home} onChange={setHome} />
       </div>
-      <PeopleField label="Owners" members={members} value={owners} onChange={setOwners} />
+      <SharedField company={company} departmentId={departmentId} value={shared} onChange={setShared} />
+      <PeopleField label="Owners" members={people} value={keep(owners)} onChange={setOwners} />
       <details>
         <summary>Contributors, due date and note</summary>
-        <PeopleField label="Contributors" members={members} value={contributors} onChange={setContributors} exclude={owners} />
+        <PeopleField label="Contributors" members={people} value={keep(contributors)} onChange={setContributors} exclude={owners} />
         <div className="field">
           <label htmlFor="due">Due</label>
           <input id="due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
@@ -277,7 +310,7 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
 // ---------- edit ----------
 
 function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> }) {
-  const { data, members, areas, companies } = props;
+  const { data, members, areas, companies, company, isManager } = props;
   const { task } = data;
   const [title, setTitle] = useState(task.title);
   const [priority, setPriority] = useState(task.priority);
@@ -291,7 +324,11 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
   const save = useAction();
   const move = useAction();
   const join = useAction();
+  const share = useAction();
   const disabled = !data.canEdit;
+  // A Manager may change the title, due date, note and Status of their own Tasks; the rest stays with Sunridge.
+  const sunridgeOnly = disabled || isManager;
+  const people = eligible(members, task.companyId, task.shared);
   const names = Object.fromEntries([...companies.map((c) => [c.id, c.name]), ...data.allAreas.map((a) => [a.id, a.name])]);
 
   const changes = {
@@ -312,12 +349,35 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
       {disabled && (
         <div className="banner">
           You’re viewing this Task. Only its Owners and Contributors can change it.
-          <div style={{ marginTop: 8 }}>
-            <button className="button secondary" disabled={join.pending} onClick={() => join.run(() => actions.joinTask(task.id))}>
-              Join as a Contributor
-            </button>
-          </div>
+          {!isManager && (
+            <div style={{ marginTop: 8 }}>
+              <button className="button secondary" disabled={join.pending} onClick={() => join.run(() => actions.joinTask(task.id))}>
+                Join as a Contributor
+              </button>
+            </div>
+          )}
           <ErrorBanner message={join.error} />
+        </div>
+      )}
+      {isManager && !disabled && (
+        <p className="banner">Sunridge shared this Task with you. You can change its title, Status, due date and note, and add links.</p>
+      )}
+      {!isManager && company.kind === "portfolio" && (
+        <div className="banner shared-state">
+          {task.shared ? `Shared with ${company.name}’s managers.` : `Not shared: only Sunridge sees this Task.`}
+          {!disabled && (canBeShared(task.departmentId) || task.shared) && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                className="button secondary"
+                disabled={share.pending}
+                onClick={() => share.run(() => actions.shareTask(task.id, !task.shared))}
+              >
+                {task.shared ? "Stop sharing" : `Share with ${company.name}’s managers`}
+              </button>
+              {task.shared && <div className="hint">Stopping takes {company.name}’s managers off this Task.</div>}
+            </div>
+          )}
+          <ErrorBanner message={share.error} />
         </div>
       )}
 
@@ -329,8 +389,8 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
       >
         <ErrorBanner message={save.error} />
         <TitleField value={title} onChange={setTitle} disabled={disabled} />
-        <PriorityField value={priority} onChange={setPriority} disabled={disabled} />
-        <PeopleField label="Owners" members={members} value={owners} onChange={setOwners} disabled={disabled} />
+        <PriorityField value={priority} onChange={setPriority} disabled={sunridgeOnly} />
+        <PeopleField label="Owners" members={people} value={owners} onChange={setOwners} disabled={sunridgeOnly} />
         <div className="field">
           <label htmlFor="due">Due</label>
           <input id="due" type="date" value={due} onChange={(e) => setDue(e.target.value)} disabled={disabled} />
@@ -338,7 +398,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         <NoteField value={note} onChange={setNote} disabled={disabled} label={task.status === "blocked" ? "Waiting on" : "Note"} />
         <details>
           <summary>Contributors</summary>
-          <PeopleField label="Contributors" members={members} value={contributors} onChange={setContributors} exclude={owners} disabled={disabled} />
+          <PeopleField label="Contributors" members={people} value={contributors} onChange={setContributors} exclude={owners} disabled={sunridgeOnly} />
         </details>
         {!disabled && (
           <button className="button" disabled={!dirty || save.pending}>
@@ -355,7 +415,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            move.run(() => actions.moveTask(task.id, { status, ...parseHome(home, areas), waitingOn }));
+            move.run(() => actions.moveTask(task.id, isManager ? { status, waitingOn } : { status, ...parseHome(home, areas), waitingOn }));
           }}
         >
           <ErrorBanner message={move.error} />
@@ -377,7 +437,11 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
           )}
           <div className="field">
             <label htmlFor="home">Where it lives</label>
-            <HomeSelect id="home" areas={areas} value={home} onChange={setHome} />
+            {isManager ? (
+              <input id="home" type="text" value={`${departmentName(task.departmentId)}${task.areaId ? ` › ${areas.find((a) => a.id === task.areaId)?.name ?? ""}` : ""}`} disabled />
+            ) : (
+              <HomeSelect id="home" areas={areas} value={home} onChange={setHome} />
+            )}
           </div>
           {!disabled && (
             <button className="button" disabled={!moved || move.pending}>
@@ -393,7 +457,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         {docs.map((d) => (
           <DocumentRow key={d.id} doc={d} disabled={disabled} moveTargets={data.moveTargets} />
         ))}
-        {!disabled && <AddDocument taskId={task.id} />}
+        {!disabled && <AddDocument taskId={task.id} linksOnly={isManager} />}
         {removedDocs.length > 0 && (
           <details>
             <summary className="small">Removed Documents</summary>
@@ -415,7 +479,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         </ul>
       </details>
 
-      {!disabled && <MoreActions {...props} />}
+      {!disabled && !isManager && <MoreActions {...props} />}
     </>
   );
 }
@@ -460,10 +524,7 @@ function DocumentRow({ doc, disabled, moveTargets }: { doc: Document; disabled: 
           </>
         )}
       </div>
-      {mode === "replace" &&
-        (doc.kind === "file" ? (
-          <UploadForm label="Upload a new version" fields={{ documentId: doc.id }} onDone={() => setMode("none")} />
-        ) : (
+      {mode === "replace" && (
           <form
             className="row"
             style={{ marginTop: 6 }}
@@ -476,7 +537,7 @@ function DocumentRow({ doc, disabled, moveTargets }: { doc: Document; disabled: 
             <input name="url" type="url" required placeholder="https://" aria-label="New link" style={{ flex: 1 }} />
             <button className="button secondary">Replace</button>
           </form>
-        ))}
+      )}
       {mode === "move" && (
         <form
           className="row"
@@ -518,8 +579,9 @@ function RemovedDocument({ doc, disabled }: { doc: Document; disabled: boolean }
   );
 }
 
-function AddDocument({ taskId }: { taskId: string }) {
-  const [kind, setKind] = useState<"link" | "claude" | "file">("link");
+/** Files stay in SharePoint (ADR 0006): add the SharePoint link to the file. */
+function AddDocument({ taskId, linksOnly }: { taskId: string; linksOnly: boolean }) {
+  const [kind, setKind] = useState<"link" | "claude">("link");
   const act = useAction();
   const [formKey, setFormKey] = useState(0);
   return (
@@ -529,13 +591,10 @@ function AddDocument({ taskId }: { taskId: string }) {
         <label htmlFor="docKind">Kind</label>
         <select id="docKind" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
           <option value="link">SharePoint or web link</option>
-          <option value="claude">Claude work (link)</option>
-          <option value="file">File (saved to SharePoint)</option>
+          {!linksOnly && <option value="claude">Claude work (link)</option>}
         </select>
       </div>
-      {kind === "file" ? (
-        <UploadForm label="Upload" fields={{ taskId }} />
-      ) : (
+      {
         <form
           key={formKey}
           onSubmit={(e) => {
@@ -567,7 +626,7 @@ function AddDocument({ taskId }: { taskId: string }) {
             Add
           </button>
         </form>
-      )}
+      }
     </details>
   );
 }
@@ -584,43 +643,6 @@ function StatusSelect() {
         ))}
       </select>
     </div>
-  );
-}
-
-/** Files go straight to SharePoint through the upload route; the app keeps only the link. */
-function UploadForm({ label, fields, onDone }: { label: string; fields: Record<string, string>; onDone?: () => void }) {
-  const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  return (
-    <form
-      style={{ marginTop: 6 }}
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setError(null);
-        setPending(true);
-        const form = new FormData(e.currentTarget);
-        Object.entries(fields).forEach(([k, v]) => form.set(k, v));
-        const response = await fetch("/api/documents/upload", { method: "POST", body: form });
-        setPending(false);
-        if (!response.ok) {
-          setError(((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? "The upload didn't work.");
-          return;
-        }
-        onDone?.();
-        router.refresh();
-      }}
-    >
-      <ErrorBanner message={error} />
-      <div className="field">
-        <label htmlFor="file">File</label>
-        <input id="file" name="file" type="file" required />
-      </div>
-      {!fields.documentId && <StatusSelect />}
-      <button className="button secondary" disabled={pending}>
-        {pending ? "Uploading…" : label}
-      </button>
-    </form>
   );
 }
 

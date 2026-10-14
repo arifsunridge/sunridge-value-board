@@ -17,12 +17,13 @@ import { moveTask } from "@/app/actions";
 import { canEdit, isOverdue, type BoardView } from "@/board/board";
 import {
   DEPARTMENTS,
+  canBeShared,
   PRIORITY_LABELS,
   STATUSES,
   STATUS_LABELS,
   type Area,
   type DepartmentId,
-  type Member,
+  type Person,
   type Status,
   type Task,
 } from "@/board/model";
@@ -55,12 +56,15 @@ export function BoardScreen({
   view,
   members,
   meId,
+  isManager,
   today,
   filter,
 }: {
   view: BoardView;
-  members: Member[];
+  members: Person[];
   meId: string;
+  /** A Manager sees Shared Tasks only and moves them between Statuses, not Areas (ADR 0005). */
+  isManager: boolean;
   today: string;
   filter: string;
 }) {
@@ -102,9 +106,14 @@ export function BoardScreen({
 
   function commit(p: Placement, waitingOn?: string) {
     setError(null);
+    const before = tasks.find((t) => t.id === p.id);
+    const sameHome = before?.departmentId === p.departmentId && before?.areaId === p.areaId;
     startTransition(async () => {
       place(p);
-      const result = await moveTask(p.id, { status: p.status, departmentId: p.departmentId, areaId: p.areaId, waitingOn });
+      const result = await moveTask(
+        p.id,
+        sameHome ? { status: p.status, waitingOn } : { status: p.status, departmentId: p.departmentId, areaId: p.areaId, waitingOn },
+      );
       if (!result.ok) setError(result.message);
     });
   }
@@ -115,6 +124,10 @@ export function BoardScreen({
     if (!task) return;
     const target = parseCell(String(event.over.id));
     if (target.status === task.status && target.departmentId === task.departmentId && target.areaId === task.areaId) return;
+    if (isManager && (target.departmentId !== task.departmentId || target.areaId !== task.areaId)) {
+      setError("Only Sunridge can move a Task to another Department or Area. Move it between Statuses instead.");
+      return;
+    }
     const p = { id: task.id, ...target };
     if (target.status === "blocked" && task.status !== "blocked") setPendingBlocked(p);
     else commit(p);
@@ -140,12 +153,16 @@ export function BoardScreen({
           ))}
         </div>
         <span className="spacer" />
-        <Link className="button" href={`?task=new`} scroll={false}>
-          Add task
-        </Link>
+        {isManager ? (
+          <span className="muted small">You see the Tasks Sunridge shares with {view.company.name}.</span>
+        ) : (
+          <Link className="button" href={`?task=new`} scroll={false}>
+            Add task
+          </Link>
+        )}
       </div>
 
-      {view.tooManyHigh && (
+      {view.tooManyHigh && !isManager && (
         <p className="banner">
           More than a quarter of {view.company.name}&apos;s open Tasks are High. Would each one really miss a Target, or
           expose the business, if it slipped a week?
@@ -157,7 +174,7 @@ export function BoardScreen({
         </p>
       )}
 
-      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+      <DndContext id="board" sensors={sensors} onDragEnd={onDragEnd}>
         <div className="board">
           <div className="grid">
             <div className="grid-head" aria-hidden="true">
@@ -169,7 +186,7 @@ export function BoardScreen({
                 </div>
               ))}
             </div>
-            {DEPARTMENTS.map((d) => (
+            {DEPARTMENTS.filter((d) => !isManager || canBeShared(d.id)).map((d) => (
               <Department
                 key={d.id}
                 id={d.id}
@@ -179,6 +196,7 @@ export function BoardScreen({
                 filtered={filter !== "all"}
                 members={members}
                 meId={meId}
+                showShared={!isManager && view.company.kind === "portfolio"}
                 today={today}
                 documentCounts={view.documentCounts}
                 onOpen={open}
@@ -246,8 +264,10 @@ function Department({
 }
 
 interface CardContext {
-  members: Member[];
+  members: Person[];
   meId: string;
+  /** Members see which Tasks the company's Managers can see. */
+  showShared: boolean;
   today: string;
   documentCounts: Record<string, number>;
   onOpen: (taskId: string) => void;
@@ -271,7 +291,7 @@ function Cell({ id, label, tasks, collapsed, ...card }: { id: string; label: str
   );
 }
 
-function Card({ task, members, meId, today, documentCounts, onOpen }: { task: Task } & CardContext) {
+function Card({ task, members, meId, showShared, today, documentCounts, onOpen }: { task: Task } & CardContext) {
   const editable = canEdit(task, meId);
   const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({ id: task.id, disabled: !editable });
   const late = isOverdue(task, today);
@@ -294,6 +314,11 @@ function Card({ task, members, meId, today, documentCounts, onOpen }: { task: Ta
         ) : (
           task.status !== "done" && <span>No date</span>
         )}
+        {showShared && task.shared ? (
+          <span className="shared-mark" title="Shared with the company's managers">
+            Shared
+          </span>
+        ) : null}
         {documentCounts[task.id] ? (
           <span title="Has Documents">
             <Paperclip />

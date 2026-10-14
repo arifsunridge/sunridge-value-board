@@ -1,12 +1,12 @@
 import { board } from "@/server/context";
-import { requireMember } from "@/server/session";
+import { requirePerson } from "@/server/session";
 import { TaskList } from "@/ui/TaskList";
 
 export default async function MyTasks() {
-  const me = await requireMember("/my");
+  const me = await requirePerson("/my");
   const b = board();
-  const [tasks, members, companies] = await Promise.all([b.myTasks(me.id), b.members(), b.companies()]);
-  const areas = (await Promise.all(companies.map((c) => b.board(c.id).then((v) => v.areas)))).flat();
+  const [tasks, members, companies] = await Promise.all([b.myTasks(me), b.people(me), b.companies(me)]);
+  const areas = (await Promise.all(companies.map((c) => b.board(me, c.id).then((v) => v.areas)))).flat();
   const today = b.today();
   const open = tasks.filter((t) => t.status !== "done");
   const done = tasks.filter((t) => t.status === "done");

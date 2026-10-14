@@ -57,6 +57,10 @@ describe("Claude endpoint: access", () => {
     });
   });
 
+  it("is for Members only: a company Manager is refused", async () => {
+    await expect(connect("dev:h-jordan")).rejects.toThrow();
+  });
+
   it("refuses a bad token with invalid_token", async () => {
     options.devTokens = false;
     const res = await handleMcp(
@@ -86,6 +90,7 @@ describe("Claude endpoint: tools", () => {
         "my_tasks",
         "remove_task",
         "restore_task",
+        "share_task",
         "update_document",
         "update_task",
       ].sort(),

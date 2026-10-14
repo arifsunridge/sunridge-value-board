@@ -6,7 +6,10 @@ import {
   PRIORITIES,
   STATUSES,
   STATUS_LABELS,
+  canBeShared,
+  canSee,
   isDepartmentId,
+  isMember,
   isOpen,
   type Area,
   type Company,
@@ -14,7 +17,7 @@ import {
   type Document,
   type DocumentKind,
   type DocumentStatus,
-  type Member,
+  type Person,
   type Priority,
   type Status,
   type Task,
@@ -26,9 +29,15 @@ import type { Store } from "@/store/store";
 
 /** Who is acting, and through which door (screen, Capture, Claude, import). */
 export interface Actor {
+  /** The Person's id. Named for the Trail column, which records Managers too. */
   memberId: string;
   via: Via;
 }
+
+/** Who is asking: an Actor, or the signed-in Person. Every read is filtered by them (ADR 0005). */
+export type Reader = Pick<Actor, "memberId"> | Pick<Person, "id">;
+
+const readerId = (who: Reader): string => ("memberId" in who ? who.memberId : who.id);
 
 export interface NewTask {
   companyId: string;
@@ -41,6 +50,8 @@ export interface NewTask {
   contributorIds?: string[];
   due?: string | null;
   note?: string | null;
+  /** Visible to the Company's Managers. Off unless set. */
+  shared?: boolean;
   /** Where a Task came from, kept in its first Trail entry, e.g. "Meeting notes, 2 Oct". */
   source?: string;
 }
@@ -121,36 +132,58 @@ export class Board {
 
   // ---------- reading ----------
 
-  members(): Promise<Member[]> {
-    return this.store.listMembers().then((ms) => ms.sort((a, b) => a.name.localeCompare(b.name)));
+  /** Everyone the asker may see on the board: Members, plus Managers of the asker's own Company. */
+  async people(who: Reader): Promise<Person[]> {
+    const me = await this.person(who);
+    const all = await this.store.listPeople();
+    return all
+      .filter((p) => isMember(p) || isMember(me) || p.companyId === me.companyId)
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  companies(): Promise<Company[]> {
-    return this.store.listCompanies();
+  /** The Companies the asker may open. A Manager sees only their own. */
+  async companies(who: Reader): Promise<Company[]> {
+    const me = await this.person(who);
+    const all = await this.store.listCompanies();
+    return isMember(me) ? all : all.filter((c) => c.id === me.companyId && c.kind === "portfolio");
   }
 
-  async company(id: string): Promise<Company> {
-    const company = (await this.store.listCompanies()).find((c) => c.id === id);
+  async company(who: Reader, id: string): Promise<Company> {
+    const company = (await this.companies(who)).find((c) => c.id === id);
     if (!company) throw new BoardError("not_found", "That company isn't on the board.");
     return company;
+  }
+
+  /** Local sign-in only (AUTH_MODE=dev, refused in production): everyone, to choose who you are. */
+  async peopleForLocalSignIn(): Promise<Person[]> {
+    return (await this.store.listPeople()).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** The signed-in Person, as the board knows them. */
+  async me(who: Reader): Promise<Person> {
+    return this.person(who);
   }
 
   today(): string {
     return this.clock().toISOString().slice(0, 10);
   }
 
-  async board(companyId: string): Promise<BoardView> {
-    const company = await this.company(companyId);
-    const [areas, all] = await Promise.all([this.store.listAreas(companyId), this.store.listTasks({ companyId })]);
-    const tasks = all.filter((t) => !t.removed).sort(compareTasks);
+  async board(who: Reader, companyId: string): Promise<BoardView> {
+    const me = await this.person(who);
+    const company = await this.company(who, companyId);
+    const [allAreas, all] = await Promise.all([this.store.listAreas(companyId), this.store.listTasks({ companyId })]);
+    const tasks = all.filter((t) => !t.removed && canSee(me, t)).sort(compareTasks);
     const documents = await this.store.listDocuments({ taskIds: tasks.map((t) => t.id) });
     const documentCounts: Record<string, number> = {};
     for (const d of documents) if (!d.removed) documentCounts[d.taskId] = (documentCounts[d.taskId] ?? 0) + 1;
     const open = tasks.filter(isOpen);
     const highShare = open.length ? open.filter((t) => t.priority === "high").length / open.length : 0;
+    // A Manager sees only the Areas that hold a Task shared with them; Area names can be sensitive too.
+    const usedAreas = new Set(tasks.map((t) => t.areaId));
+    const areas = allAreas.filter((a) => !a.retired && (isMember(me) || usedAreas.has(a.id)));
     return {
       company,
-      areas: areas.filter((a) => !a.retired).sort((a, b) => a.name.localeCompare(b.name)),
+      areas: areas.sort((a, b) => a.name.localeCompare(b.name)),
       tasks,
       documentCounts,
       nowCount: tasks.filter((t) => t.status === "now").length,
@@ -159,8 +192,8 @@ export class Board {
     };
   }
 
-  async task(id: string): Promise<{ task: Task; documents: Document[]; trail: TrailEntry[] }> {
-    const task = await this.requireTask(id);
+  async task(who: Reader, id: string): Promise<{ task: Task; documents: Document[]; trail: TrailEntry[] }> {
+    const task = await this.requireVisible(who, id);
     const [documents, trail] = await Promise.all([
       this.store.listDocuments({ taskIds: [id] }),
       this.store.listTrail({ taskId: id }),
@@ -168,9 +201,12 @@ export class Board {
     return { task, documents, trail: visibleTrail(trail) };
   }
 
-  async document(id: string): Promise<Document> {
+  async document(who: Reader, id: string): Promise<Document> {
     const doc = await this.store.getDocument(id);
     if (!doc) throw new BoardError("not_found", "That Document isn't on the board.");
+    await this.requireVisible(who, doc.taskId).catch(() => {
+      throw new BoardError("not_found", "That Document isn't on the board.");
+    });
     return doc;
   }
 
@@ -179,29 +215,33 @@ export class Board {
     return this.requireEditable(actor, taskId);
   }
 
-  /** Tasks a Member owns or contributes to, across every Company. */
-  async myTasks(memberId: string): Promise<Task[]> {
+  /** Tasks the asker owns or contributes to, across every Company they can see. */
+  async myTasks(who: Reader): Promise<Task[]> {
+    const me = await this.person(who);
     const tasks = await this.store.listTasks({});
     return tasks
-      .filter((t) => !t.removed && (t.ownerIds.includes(memberId) || t.contributorIds.includes(memberId)))
+      .filter((t) => !t.removed && canSee(me, t) && (t.ownerIds.includes(me.id) || t.contributorIds.includes(me.id)))
       .sort(compareTasks);
   }
 
-  async removedTasks(companyId: string): Promise<Task[]> {
+  async removedTasks(who: Reader, companyId: string): Promise<Task[]> {
+    await this.requireMember(who, "see removed Tasks");
     const tasks = await this.store.listTasks({ companyId });
     return tasks.filter((t) => t.removed).sort(compareTasks);
   }
 
   /** The Partner view: what needs attention, what's late, and what changed in the last week. */
-  async summary(companyId: string, days = 7): Promise<Summary> {
-    const company = await this.company(companyId);
+  async summary(who: Reader, companyId: string, days = 7): Promise<Summary> {
+    const me = await this.person(who);
+    const company = await this.company(who, companyId);
     const today = this.today();
     const since = new Date(this.clock().getTime() - days * 86_400_000).toISOString();
     const [all, trail] = await Promise.all([
       this.store.listTasks({ companyId }),
       this.store.listTrail({ companyId, since }),
     ]);
-    const tasks = all.filter((t) => !t.removed).sort(compareTasks);
+    const tasks = all.filter((t) => !t.removed && canSee(me, t)).sort(compareTasks);
+    const seen = new Set(tasks.map((t) => t.id));
     const open = tasks.filter(isOpen);
     const attention = open.filter((t) => t.priority === "high" || t.status === "blocked");
     attention.sort((a, b) => Number(b.status === "blocked") - Number(a.status === "blocked") || compareTasks(a, b));
@@ -210,7 +250,7 @@ export class Board {
     const byTask = new Map<string, string[]>();
     for (const entry of visibleTrail(trail)) {
       const label = describeChange(entry);
-      if (!label || !entry.taskId) continue;
+      if (!label || !entry.taskId || !seen.has(entry.taskId)) continue;
       const events = byTask.get(entry.taskId) ?? [];
       if (!events.includes(label)) events.push(label);
       byTask.set(entry.taskId, events);
@@ -226,13 +266,15 @@ export class Board {
   // ---------- Tasks ----------
 
   async createTask(actor: Actor, input: NewTask): Promise<Task> {
-    await this.company(input.companyId);
+    await this.requireMember(actor, "add Tasks");
+    await this.company(actor, input.companyId);
     const home = await this.home(input.companyId, input.departmentId, input.areaId ?? null);
-    const members = await this.memberIds();
-    const ownerIds = this.people(input.ownerIds, members, "Owner");
-    if (!ownerIds.length) throw new BoardError("invalid", "A Task needs at least one Owner.");
-    const contributorIds = this.people(input.contributorIds ?? [], members, "Contributor").filter(
-      (id) => !ownerIds.includes(id),
+    const shared = input.shared ?? false;
+    if (shared && !canBeShared(home.departmentId)) throw cannotShare();
+    const { ownerIds, contributorIds } = await this.checkPeople(
+      { companyId: input.companyId, shared },
+      input.ownerIds,
+      input.contributorIds ?? [],
     );
     if (!PRIORITIES.includes(input.priority)) throw new BoardError("invalid", "Choose High, Medium or Low.");
     const status = input.status ?? "next";
@@ -255,6 +297,7 @@ export class Board {
       contributorIds,
       due: cleanDue(input.due),
       note,
+      shared,
       removed: false,
       leverId: null,
       createdAt: now,
@@ -271,21 +314,22 @@ export class Board {
   async updateTask(actor: Actor, id: string, changes: TaskChanges): Promise<Task> {
     const before = await this.requireEditable(actor, id);
     const after: Task = { ...before };
-    const members = await this.memberIds();
+    const me = await this.person(actor);
+    if (!isMember(me) && (changes.priority !== undefined || changes.ownerIds !== undefined || changes.contributorIds !== undefined)) {
+      throw new BoardError("not_allowed", "Only Sunridge can change the Priority, Owners and Contributors.");
+    }
 
     if (changes.title !== undefined) after.title = cleanTitle(changes.title);
     if (changes.priority !== undefined) {
       if (!PRIORITIES.includes(changes.priority)) throw new BoardError("invalid", "Choose High, Medium or Low.");
       after.priority = changes.priority;
     }
-    if (changes.ownerIds !== undefined) {
-      after.ownerIds = this.people(changes.ownerIds, members, "Owner");
-      if (!after.ownerIds.length) throw new BoardError("invalid", "A Task needs at least one Owner.");
+    if (changes.ownerIds !== undefined || changes.contributorIds !== undefined) {
+      Object.assign(
+        after,
+        await this.checkPeople(after, changes.ownerIds ?? after.ownerIds, changes.contributorIds ?? after.contributorIds),
+      );
     }
-    if (changes.contributorIds !== undefined) {
-      after.contributorIds = this.people(changes.contributorIds, members, "Contributor");
-    }
-    after.contributorIds = after.contributorIds.filter((c) => !after.ownerIds.includes(c));
     if (changes.due !== undefined) after.due = cleanDue(changes.due);
     if (changes.note !== undefined) {
       after.note = cleanNote(changes.note);
@@ -302,6 +346,7 @@ export class Board {
     const before = await this.requireEditable(actor, id);
     const after: Task = { ...before, status: move.status };
     if (move.departmentId !== undefined || move.areaId !== undefined) {
+      await this.requireMember(actor, "move a Task to another Department or Area");
       Object.assign(
         after,
         await this.home(before.companyId, move.departmentId ?? before.departmentId, move.areaId ?? null),
@@ -312,7 +357,7 @@ export class Board {
       if (!waitingOn) throw new BoardError("waiting_on_required", "Say what this Task is waiting on.");
       after.note = waitingOn;
     }
-    if (move.status === "now" && before.status !== "now") await this.checkNowCap(before.companyId, before.id);
+    if (move.status === "now" && before.status !== "now") await this.checkNowCap(before.companyId, before.id, actor);
     return this.save(actor, before, after);
   }
 
@@ -322,8 +367,10 @@ export class Board {
     id: string,
     to: { companyId: string; departmentId: string; areaId?: string | null },
   ): Promise<Task> {
+    await this.requireMember(actor, "move a Task to another company");
     const before = await this.requireEditable(actor, id);
-    await this.company(to.companyId);
+    if (before.shared) throw new BoardError("invalid", "Stop sharing this Task before moving it to another company.");
+    await this.company(actor, to.companyId);
     const after: Task = {
       ...before,
       companyId: to.companyId,
@@ -335,12 +382,32 @@ export class Board {
 
   /** Any Member can join a Task as a Contributor. The Trail records it. */
   async joinTask(actor: Actor, id: string): Promise<Task> {
+    await this.requireMember(actor, "join a Task");
     const before = await this.requireTask(id);
     if (before.ownerIds.includes(actor.memberId) || before.contributorIds.includes(actor.memberId)) return before;
     return this.save(actor, before, { ...before, contributorIds: [...before.contributorIds, actor.memberId] });
   }
 
+  /**
+   * Share a Task with its Company's Managers, or stop sharing it (ADR 0005). Stopping takes
+   * Managers off its Owners and Contributors; every Task keeps a Member as Owner, so it is never left without one.
+   */
+  async shareTask(actor: Actor, id: string, shared: boolean): Promise<Task> {
+    await this.requireMember(actor, "share Tasks");
+    const before = await this.requireEditable(actor, id);
+    if (before.shared === shared) return before;
+    if (shared && !canBeShared(before.departmentId)) throw cannotShare();
+    const after: Task = { ...before, shared };
+    if (!shared) {
+      const members = new Set((await this.store.listPeople()).filter(isMember).map((p) => p.id));
+      after.ownerIds = before.ownerIds.filter((p) => members.has(p));
+      after.contributorIds = before.contributorIds.filter((p) => members.has(p));
+    }
+    return this.save(actor, before, after);
+  }
+
   async removeTask(actor: Actor, id: string): Promise<Task> {
+    await this.requireMember(actor, "remove Tasks");
     const before = await this.requireEditable(actor, id);
     if (before.removed) return before;
     return this.save(actor, before, { ...before, removed: true });
@@ -348,6 +415,7 @@ export class Board {
 
   /** Restores a removed Task. If its Company already has a full Now, it comes back in Next. */
   async restoreTask(actor: Actor, id: string): Promise<Task> {
+    await this.requireMember(actor, "restore Tasks");
     const before = await this.requireEditable(actor, id);
     if (!before.removed) return before;
     const after: Task = { ...before, removed: false };
@@ -360,6 +428,9 @@ export class Board {
   async addDocument(actor: Actor, taskId: string, input: NewDocument): Promise<Document> {
     const task = await this.requireEditable(actor, taskId);
     if (!DOCUMENT_KINDS.includes(input.kind)) throw new BoardError("invalid", "A Document is a File, a Link or Claude work.");
+    if (input.kind !== "link" && !isMember(await this.person(actor))) {
+      throw new BoardError("not_allowed", "You can add Links. Ask Sunridge to add Files.");
+    }
     checkDocumentStatus(input.status ?? "draft");
     const doc: Document = {
       id: this.newId(),
@@ -448,7 +519,8 @@ export class Board {
   // ---------- Areas ----------
 
   async createArea(actor: Actor, input: { companyId: string; departmentId: string; name: string }): Promise<Area> {
-    await this.company(input.companyId);
+    await this.requireMember(actor, "change Areas");
+    await this.company(actor, input.companyId);
     if (!isDepartmentId(input.departmentId)) throw new BoardError("invalid", "That isn't one of the six Departments.");
     const name = cleanName(input.name, "An Area", 40);
     const existing = await this.store.listAreas(input.companyId);
@@ -461,6 +533,7 @@ export class Board {
   }
 
   async renameArea(actor: Actor, id: string, name: string): Promise<Area> {
+    await this.requireMember(actor, "change Areas");
     const area = await this.requireArea(id);
     const after = { ...area, name: cleanName(name, "An Area", 40) };
     if (after.name === area.name) return area;
@@ -472,6 +545,7 @@ export class Board {
 
   /** Retire an Area. Its open Tasks move to another Area (or straight under the Department). */
   async retireArea(actor: Actor, id: string, moveTo: { areaId: string | null }): Promise<Area> {
+    await this.requireMember(actor, "change Areas");
     const area = await this.requireArea(id);
     if (moveTo.areaId === id) throw new BoardError("invalid", "Choose a different Area for its Tasks.");
     const home = moveTo.areaId
@@ -480,6 +554,7 @@ export class Board {
     const tasks = (await this.store.listTasks({ companyId: area.companyId })).filter(
       (t) => t.areaId === id && !t.removed,
     );
+    if (!canBeShared(home.departmentId) && tasks.some((t) => t.shared)) throw cannotShare();
     for (const task of tasks) {
       // Done Tasks move too, so nothing points at a retired Area.
       await this.save(actor, task, { ...task, ...home });
@@ -489,19 +564,26 @@ export class Board {
     return after;
   }
 
-  // ---------- Members ----------
+  // ---------- People ----------
 
-  /** Called on every sign-in so the Member list stays current. */
-  async recordMember(member: Member): Promise<void> {
-    const existing = (await this.store.listMembers()).find((m) => m.id === member.id);
-    if (!existing || existing.name !== member.name || existing.email !== member.email) {
-      await this.store.putMember(member);
+  /** Called on every sign-in, from what the HBF Portal verified, so the list of people stays current. */
+  async recordPerson(person: Person): Promise<void> {
+    const existing = (await this.store.listPeople()).find((p) => p.id === person.id);
+    if (
+      !existing ||
+      existing.name !== person.name ||
+      existing.email !== person.email ||
+      existing.kind !== person.kind ||
+      existing.companyId !== person.companyId
+    ) {
+      await this.store.putPerson(person);
     }
   }
 
   // ---------- internals ----------
 
   private async save(actor: Actor, before: Task, after: Task): Promise<Task> {
+    if (after.shared && !canBeShared(after.departmentId)) throw cannotShare();
     const entries = taskDiff(before, after).map(([field, old, value]) =>
       this.entry(actor, after, "task", after.id, actionFor(field, before, after), field, old, value),
     );
@@ -517,7 +599,7 @@ export class Board {
           [this.entry(actor, reverted, "task", after.id, "moved", "status", "now", before.status)],
           () => this.store.putTask(reverted),
         );
-        throw await this.nowCapError(after.companyId);
+        throw await this.nowCapError(after.companyId, actor);
       }
     }
     return after;
@@ -608,16 +690,47 @@ export class Board {
     return { departmentId, areaId: null };
   }
 
-  private async memberIds(): Promise<Set<string>> {
-    return new Set((await this.store.listMembers()).map((m) => m.id));
+  private async person(who: Reader): Promise<Person> {
+    const id = readerId(who);
+    const person = (await this.store.listPeople()).find((p) => p.id === id);
+    if (!person) throw new BoardError("not_allowed", "You aren't on the board yet. Open it from the HBF Portal.");
+    return person;
   }
 
-  private people(ids: string[], members: Set<string>, role: string): string[] {
-    const unique = [...new Set(ids)];
-    if (unique.some((id) => !members.has(id))) {
-      throw new BoardError("invalid", `Every ${role} must be a Sunridge Member.`);
+  private async requireMember(who: Reader, what: string): Promise<Person> {
+    const person = await this.person(who);
+    if (!isMember(person)) throw new BoardError("not_allowed", `Only Sunridge can ${what}.`);
+    return person;
+  }
+
+  /**
+   * Owners and Contributors: Members, or this Company's Managers on a Shared Task.
+   * At least one Owner is a Member, so Sunridge stays accountable for every Task.
+   */
+  private async checkPeople(
+    task: { companyId: string; shared: boolean },
+    ownerIds: string[],
+    contributorIds: string[],
+  ): Promise<{ ownerIds: string[]; contributorIds: string[] }> {
+    const everyone = new Map((await this.store.listPeople()).map((p) => [p.id, p]));
+    const check = (ids: string[], role: string) => {
+      const unique = [...new Set(ids)];
+      for (const id of unique) {
+        const p = everyone.get(id);
+        if (!p) throw new BoardError("invalid", `Every ${role} must be someone on the board.`);
+        if (!isMember(p) && !(task.shared && p.companyId === task.companyId)) {
+          throw new BoardError("invalid", `A Manager can be an ${role} only on a Shared Task in their own company.`);
+        }
+      }
+      return unique;
+    };
+    const owners = check(ownerIds, "Owner");
+    if (!owners.length) throw new BoardError("invalid", "A Task needs at least one Owner.");
+    if (!owners.some((id) => isMember(everyone.get(id)!))) {
+      throw new BoardError("invalid", "A Task needs at least one Owner from Sunridge.");
     }
-    return unique;
+    const contributors = check(contributorIds, "Contributor").filter((id) => !owners.includes(id));
+    return { ownerIds: owners, contributorIds: contributors };
   }
 
   private async nowCount(companyId: string, excludeTaskId: string | null): Promise<number> {
@@ -625,13 +738,21 @@ export class Board {
     return tasks.filter((t) => !t.removed && t.status === "now" && t.id !== excludeTaskId).length;
   }
 
-  private async checkNowCap(companyId: string, excludeTaskId: string | null): Promise<void> {
-    if ((await this.nowCount(companyId, excludeTaskId)) >= NOW_CAP) throw await this.nowCapError(companyId);
+  private async checkNowCap(companyId: string, excludeTaskId: string | null, who?: Reader): Promise<void> {
+    if ((await this.nowCount(companyId, excludeTaskId)) >= NOW_CAP) throw await this.nowCapError(companyId, who);
   }
 
-  private async nowCapError(companyId: string): Promise<BoardError> {
-    const company = await this.company(companyId);
-    return new BoardError("now_cap", `${company.name} already has ${NOW_CAP} Tasks in Now. Move one out first.`);
+  /** The cap counts every Task, including ones a Manager can't see, so a Manager is told whom to ask. */
+  private async nowCapError(companyId: string, who?: Reader): Promise<BoardError> {
+    const company = (await this.store.listCompanies()).find((c) => c.id === companyId);
+    const name = company?.name ?? "This company";
+    const manager = who ? !isMember(await this.person(who)) : false;
+    return new BoardError(
+      "now_cap",
+      manager
+        ? `${name} already has ${NOW_CAP} Tasks in Now. Ask Sunridge which one to move out first.`
+        : `${name} already has ${NOW_CAP} Tasks in Now. Move one out first.`,
+    );
   }
 
   private async requireTask(id: string): Promise<Task> {
@@ -640,8 +761,15 @@ export class Board {
     return task;
   }
 
+  /** A Task the asker may see. Anything else answers "not found", so its existence isn't revealed. */
+  private async requireVisible(who: Reader, id: string): Promise<Task> {
+    const [task, me] = await Promise.all([this.store.getTask(id), this.person(who)]);
+    if (!task || !canSee(me, task)) throw new BoardError("not_found", "That Task isn't on the board.");
+    return task;
+  }
+
   private async requireEditable(actor: Actor, id: string): Promise<Task> {
-    const task = await this.requireTask(id);
+    const task = await this.requireVisible(actor, id);
     if (!canEdit(task, actor.memberId)) {
       throw new BoardError("not_allowed", "Only this Task's Owners and Contributors can change it. Join it first.");
     }
@@ -674,8 +802,8 @@ export function canEdit(task: Task, memberId: string): boolean {
   return task.ownerIds.includes(memberId) || task.contributorIds.includes(memberId);
 }
 
-type Field = "title" | "status" | "priority" | "ownerIds" | "contributorIds" | "due" | "note" | "companyId" | "departmentId" | "areaId" | "removed";
-const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "contributorIds", "due", "note", "companyId", "departmentId", "areaId", "removed"];
+type Field = "title" | "status" | "priority" | "ownerIds" | "contributorIds" | "due" | "note" | "companyId" | "departmentId" | "areaId" | "shared" | "removed";
+const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "contributorIds", "due", "note", "companyId", "departmentId", "areaId", "shared", "removed"];
 
 function show(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -689,6 +817,7 @@ function taskDiff(before: Task, after: Task): [Field, string | null, string | nu
 
 function actionFor(field: Field, before: Task, after: Task): string {
   if (field === "removed") return after.removed ? "removed" : "restored";
+  if (field === "shared") return after.shared ? "shared" : "unshared";
   if (field === "status" || field === "companyId" || field === "departmentId" || field === "areaId") return "moved";
   if (field === "contributorIds" && after.contributorIds.length > before.contributorIds.length) return "joined";
   return "changed";
@@ -706,6 +835,7 @@ function describeChange(entry: TrailEntry): string | null {
     if (entry.action === "created") return "Added";
     if (entry.action === "removed") return "Removed";
     if (entry.action === "restored") return "Restored";
+    if (entry.action === "shared") return "Shared";
     if (entry.field === "status" && entry.new) return `Moved to ${STATUS_LABELS[entry.new as Status] ?? entry.new}`;
     if (entry.field === "priority" && entry.new) return `Priority now ${entry.new[0]!.toUpperCase()}${entry.new.slice(1)}`;
     if (entry.field === "due") return "Due date changed";
@@ -715,4 +845,8 @@ function describeChange(entry: TrailEntry): string | null {
     if (entry.action === "replaced" || entry.action === "new_version") return "Document updated";
   }
   return null;
+}
+
+function cannotShare(): BoardError {
+  return new BoardError("invalid", "Tasks in Talent & organisation or Finance can't be shared. Stop sharing it, or keep it in another Department.");
 }

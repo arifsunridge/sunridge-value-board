@@ -22,12 +22,14 @@ async function setup() {
 }
 
 describe("Claude access tokens", () => {
-  it("accepts a Sunridge token for this board and returns its Member", async () => {
+  it("accepts a Sunridge token for this board and returns its Member, keyed by email", async () => {
     const { keys, sign } = await setup();
     await expect(memberFromToken(await sign({}), { tenantId, clientId, resource, keys })).resolves.toEqual({
-      id: "m-theran",
+      id: "theran@example.com",
       name: "Theran Example",
       email: "theran@example.com",
+      kind: "member",
+      companyId: null,
     });
     // Tokens whose audience is the endpoint address are accepted too.
     await expect(memberFromToken(await sign({}, { audience: resource }), { tenantId, clientId, resource, keys })).resolves.toBeTruthy();
