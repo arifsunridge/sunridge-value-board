@@ -45,8 +45,8 @@ The team keeps using the "Sunridge team board" Claude artifact, and the two boar
 
 1. Render, `sunridge-value-board`: set `SYNC_TOKEN` (a random secret of at least 32 characters) and `SYNC_AS_EMAIL` (the Member the sync acts as; they must have signed in to the board once).
 2. The artifact holds the sync's settings in its `valueBoardSync` collection, document `config`: `people` (the artifact's `u_…` ids to emails), `projects` (artifact projects to board Companies), `newTaskProject` (which project gets Tasks added on the board) and `syncAs` (the `u_…` id of `SYNC_AS_EMAIL`).
-3. Claude environment for the routine: allow `sunridge-value-board.onrender.com` under Network access, and add `SYNC_TOKEN` as a secret.
-4. The routine, hourly: read the four collections with ArtifactData into a folder, run `node scripts/team-board-sync.mjs <folder> <out>`, then apply each batch in `<out>/batches.json` with ArtifactData `batch`.
+3. Claude environment for the routine: allow `sunridge-value-board.onrender.com` under Network access, and add `SYNC_TOKEN` as an environment variable (or a network secret for that host).
+4. The routine, hourly: read the four collections with ArtifactData into a folder, run `NODE_USE_ENV_PROXY=1 node scripts/team-board-sync.mjs <folder> <out>`, then apply each batch in `<out>/batches.json` with ArtifactData `batch`.
 
 Everyone named as an Owner should sign in to the board once, so the board knows them. Until then their Tasks are owned by the syncing Member.
 
