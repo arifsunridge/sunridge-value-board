@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // The routine's half of the team board sync (ADR 0007), plain Node with no dependencies.
 //
-//   SYNC_TOKEN=... node scripts/team-board-sync.mjs <export dir> <out dir>
+//   NODE_USE_ENV_PROXY=1 SYNC_TOKEN=... node scripts/team-board-sync.mjs <export dir> <out dir>
+//
+// SYNC_TOKEN may instead be a network secret the environment's proxy adds for the board's host;
+// then leave it unset. NODE_USE_ENV_PROXY=1 makes Node's fetch use the environment's proxy.
 //
 // <export dir> holds the artifact's collections as ArtifactData saves them with out_dir:
 // actions/, categories/, documents/ and valueBoardSync/config.json, one JSON file per document.
@@ -14,7 +17,6 @@ const [exportDir, outDir] = process.argv.slice(2);
 const url = process.env.SYNC_URL ?? "https://sunridge-value-board.onrender.com/api/sync";
 const token = process.env.SYNC_TOKEN;
 if (!exportDir || !outDir) throw new Error("Usage: node scripts/team-board-sync.mjs <export dir> <out dir>");
-if (!token) throw new Error("Set SYNC_TOKEN.");
 
 function collection(name) {
   const dir = join(exportDir, name);
@@ -32,10 +34,11 @@ const snapshot = { actions: collection("actions"), categories: collection("categ
 
 const response = await fetch(url, {
   method: "POST",
-  headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "application/json" },
   body: JSON.stringify(snapshot),
 });
 const body = await response.json().catch(() => ({}));
+if (response.status === 401 && !token) throw new Error("The board refused the sync: set SYNC_TOKEN, as an environment variable or a network secret for the board's host.");
 if (!response.ok) throw new Error(`The board answered ${response.status}: ${body.error ?? "no reason given"}`);
 
 mkdirSync(join(outDir, "writes"), { recursive: true });
