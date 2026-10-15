@@ -32,7 +32,7 @@ export function TaskList({
             <div className="meta">
               {STATUS_LABELS[t.status]} · {departmentName(t.departmentId)}
               {area ? ` › ${area.name}` : ""} · {peopleNames(t.ownerIds, members)}
-              {t.due ? ` · ${late ? "Overdue, " : "Due "}${formatDay(t.due)}` : " · No date"}
+              {t.due ? ` · ${late ? "Late, " : "Due "}${formatDay(t.due)}` : " · No date"}
             </div>
             {t.status === "blocked" && t.note && <div className="meta">Waiting on: {t.note}</div>}
             {notes?.[t.id] && <div className="meta">{notes[t.id]}</div>}

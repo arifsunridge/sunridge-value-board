@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { board } from "@/server/context";
 import { requirePerson } from "@/server/session";
 import { AreasManager } from "@/ui/AreasManager";
-import { CompanyViews } from "@/ui/CompanyViews";
+import { CompanyHead } from "@/ui/CompanyViews";
 
 export default async function AreasPage({ params }: { params: Promise<{ companyId: string }> }) {
   const { companyId } = await params;
@@ -12,10 +12,7 @@ export default async function AreasPage({ params }: { params: Promise<{ companyI
   const [view, removed] = await Promise.all([b.board(me, companyId), b.removedTasks(me, companyId)]);
   return (
     <main>
-      <div className="toolbar">
-        <h1 style={{ margin: 0 }}>{view.company.name}: Areas</h1>
-        <CompanyViews companyId={companyId} current="/areas" />
-      </div>
+      <CompanyHead company={view.company} current="/areas" />
       <AreasManager
         companyId={companyId}
         areas={view.areas}

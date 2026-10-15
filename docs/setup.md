@@ -47,7 +47,7 @@ The team works today in the "Sunridge team board" Claude artifact. Move it acros
 2. Write `private/team-board.json`: `{ "people": { "u_…": "<email>" }, "guessed": [], "companies": { "p-hbf": "HBF", … } }`, mapping the artifact's user ids to people's emails and its projects to the board's companies.
 3. `npm run import -- prepare-team-board private/team-board --config private/team-board.json --out private/review.json`
 4. Everyone named as an Owner signs in to the board once, so the board knows them.
-5. On the board, **Import** (Members only): upload `review.json`, check every row, choose an Owner where there is none, untick what you don't want, and import. Tasks come in as you, with their Status, Documents and Priority, and are not Shared. A company's Now holds 5: the rest come in as Next, and the screen says which. Running it again adds nothing already on the board.
+5. On the board, **Import** (Members only): upload `review.json`, check every row, choose an Owner where there is none, untick what you don't want, and import. Tasks come in as you, with their Status, Documents and Priority, and are not Shared. A company's Now holds 10: the rest come in as Next, and the screen says which. Running it again adds nothing already on the board.
 
 The older prototype backup is prepared with `npm run import -- prepare` instead, and imports the same way.
 

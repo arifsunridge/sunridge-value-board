@@ -20,6 +20,6 @@ This replaces ADR 0001 ("only Sunridge staff can ever sign in"). Its reason stil
 - The portal fixes the role by audience in code: Sunridge people get the role **Sunridge team** (Members) and HBF people get **HBF team** (`AUDIENCE_ROLES` in `hbf-portal`). The board also reads the audience itself, so a wrong role in App settings can't turn someone from HBF into a Member.
 - Every read in `board/` filters by the Person asking. A Task that isn't visible to the Company team answers "not found", so its existence isn't revealed.
 - Stopping sharing takes the Company team off the Task's Owners and Contributors. A Shared Task can't move to another Company or into Talent & organisation or Finance until a Member stops sharing it.
-- The Now cap still counts every Task, so someone in the Company team can be refused a sixth Task in Now without seeing all five.
+- The Now cap still counts every Task, so someone in the Company team can be refused a Task in Now without seeing every Task already there.
 - A Shared Task's Trail is visible to the Company team, including changes made before it was Shared.
 - Capture, Areas, removing and restoring Tasks, and Claude access stay Member-only.

@@ -31,7 +31,7 @@ export const DOCUMENT_STATUSES = ["draft", "in_review", "final"] as const;
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = { draft: "Draft", in_review: "In review", final: "Final" };
 
-export const NOW_CAP = 5;
+export const NOW_CAP = 10;
 export const HIGH_SHARE_WARNING = 0.25;
 export const TITLE_MAX_WORDS = 8;
 export const NOTE_MAX_CHARS = 200;

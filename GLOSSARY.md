@@ -27,7 +27,7 @@ A single piece of work with one Home, a short title starting with a verb, and a 
 _Avoid_: Action, to-do, item, card (a card is how a Task is drawn, not what it is)
 
 **Status**:
-Where a Task stands: Next, Now, Blocked or Done. Each Company has at most five Tasks in Now, however they are shared between people.
+Where a Task stands: Next, Now, Blocked or Done. Each Company has at most ten Tasks in Now, however they are shared between people.
 _Avoid_: Stage, state, column, lane, "in progress", "to do"
 
 **Shared**:

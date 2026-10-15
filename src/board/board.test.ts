@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Board, type Actor } from "./board";
 import { BoardError, titleHints } from "./rules";
+import { NOW_CAP } from "./model";
 import { MemoryStore } from "@/store/memory";
 import { demoSeed } from "@/store/seed";
 import type { Store } from "@/store/store";
+
+const NUMBERS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+/** Titles that fill a Company's Now up to the cap, after the demo seed's 2. */
+const NOW_FILLERS = NUMBERS.slice(0, NOW_CAP - 2).map((n) => `Draft plan ${n}`);
 
 const arif: Actor = { memberId: "m-arif", via: "screen" };
 const theran: Actor = { memberId: "m-theran", via: "screen" };
@@ -73,24 +78,24 @@ describe("creating a Task", () => {
 
 describe("the Now cap", () => {
   async function fillNow() {
-    // HBF starts with 2 in Now; add 3 more.
-    for (const title of ["Draft one", "Draft two", "Draft three"]) {
+    // HBF starts with 2 in Now; fill the rest.
+    for (const title of NOW_FILLERS) {
       await board.createTask(arif, newTask({ title, status: "now" }));
     }
   }
 
-  it("refuses a sixth Task in Now for the same Company, naming the Company", async () => {
+  it("refuses one more Task in Now than the cap for the same Company, naming the Company", async () => {
     await fillNow();
-    const sixth = await board.createTask(arif, newTask({ title: "Draft four" }));
-    await expect(board.moveTask(arif, sixth.id, { status: "now" })).rejects.toThrow(
-      "HBF already has 5 Tasks in Now. Move one out first.",
+    const extra = await board.createTask(arif, newTask({ title: "Draft the extra plan" }));
+    await expect(board.moveTask(arif, extra.id, { status: "now" })).rejects.toThrow(
+      `HBF already has ${NOW_CAP} Tasks in Now. Move one out first.`,
     );
   });
 
   it("counts Tasks, not people: one Member may own several in Now", async () => {
     await fillNow();
     const view = await board.board(arif, "c-hbf");
-    expect(view.nowCount).toBe(5);
+    expect(view.nowCount).toBe(NOW_CAP);
   });
 
   it("is per Company: Sunridge's Now is separate", async () => {
@@ -372,7 +377,7 @@ describe("Company teams and Shared Tasks (ADR 0005)", () => {
   });
 
   it("tells the HBF team whom to ask when Now is full", async () => {
-    for (const title of ["Draft the plan", "Book the visit", "Order new parts"]) {
+    for (const title of NOW_FILLERS) {
       await board.createTask(arif, newTask({ title, status: "now" }));
     }
     await expect(board.moveTask(jordan, "t-2", { status: "now" })).rejects.toThrow(/Ask Sunridge/);

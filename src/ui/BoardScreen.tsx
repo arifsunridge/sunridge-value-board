@@ -16,6 +16,8 @@ import { useEffect, useOptimistic, useRef, useState, useTransition } from "react
 import { moveTask } from "@/app/actions";
 import { canEdit, isOverdue, type BoardView } from "@/board/board";
 import {
+  NOW_CAP,
+  initials,
   DEPARTMENTS,
   canBeShared,
   PRIORITY_LABELS,
@@ -27,16 +29,37 @@ import {
   type Status,
   type Task,
 } from "@/board/model";
-import { formatDay, peopleInitials, peopleNames } from "./format";
+import { CompanyHead } from "./CompanyViews";
+import { formatDay, peopleNames } from "./format";
 
 const FILTERS = [
   { id: "all", label: "Everything" },
   { id: "mine", label: "Mine" },
   { id: "high", label: "High" },
   { id: "blocked", label: "Blocked" },
-  { id: "overdue", label: "Overdue" },
+  { id: "overdue", label: "Late", alert: true },
   { id: "nodate", label: "No date" },
 ] as const;
+
+function matches(filter: string, t: Task, meId: string, today: string): boolean {
+  switch (filter) {
+    case "mine":
+      return t.ownerIds.includes(meId) || t.contributorIds.includes(meId);
+    case "high":
+      return t.priority === "high";
+    case "blocked":
+      return t.status === "blocked";
+    case "overdue":
+      return isOverdue(t, today);
+    case "nodate":
+      return t.status !== "done" && !t.due;
+    default:
+      return true;
+  }
+}
+
+const openCount = (tasks: Task[]) => tasks.filter((t) => t.status !== "done").length;
+const openLabel = (n: number) => (n ? `${n} open` : "Nothing open");
 
 interface Placement {
   id: string;
@@ -47,9 +70,17 @@ interface Placement {
 
 const cellId = (departmentId: string, areaId: string | null, status: Status) => `${departmentId}|${areaId ?? ""}|${status}`;
 
-function parseCell(id: string): { departmentId: DepartmentId; areaId: string | null; status: Status } {
+function parseCell(id: string): {
+  departmentId: DepartmentId;
+  areaId: string | null;
+  status: Status;
+} {
   const [departmentId, areaId, status] = id.split("|");
-  return { departmentId: departmentId as DepartmentId, areaId: areaId || null, status: status as Status };
+  return {
+    departmentId: departmentId as DepartmentId,
+    areaId: areaId || null,
+    status: status as Status,
+  };
 }
 
 export function BoardScreen({
@@ -59,6 +90,7 @@ export function BoardScreen({
   isCompanyTeam,
   today,
   filter,
+  showEmpty,
 }: {
   view: BoardView;
   members: Person[];
@@ -67,36 +99,29 @@ export function BoardScreen({
   isCompanyTeam: boolean;
   today: string;
   filter: string;
+  /** Show Departments and Areas with no Tasks, for dragging a Task into one. */
+  showEmpty: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const [tasks, place] = useOptimistic(view.tasks, (current: Task[], p: Placement) =>
-    current.map((t) => (t.id === p.id ? { ...t, status: p.status, departmentId: p.departmentId, areaId: p.areaId } : t)),
+    current.map((t) =>
+      t.id === p.id
+        ? {
+            ...t,
+            status: p.status,
+            departmentId: p.departmentId,
+            areaId: p.areaId,
+          }
+        : t,
+    ),
   );
   const [pendingBlocked, setPendingBlocked] = useState<Placement | null>(null);
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor));
 
-  const visible = tasks.filter((t) => {
-    switch (filter) {
-      case "mine":
-        return t.ownerIds.includes(meId) || t.contributorIds.includes(meId);
-      case "high":
-        return t.priority === "high";
-      case "blocked":
-        return t.status === "blocked";
-      case "overdue":
-        return isOverdue(t, today);
-      case "nodate":
-        return t.status !== "done" && !t.due;
-      default:
-        return true;
-    }
-  });
+  const visible = tasks.filter((t) => matches(filter, t, meId, today));
 
   function open(taskId: string) {
     const next = new URLSearchParams(params);
@@ -112,7 +137,14 @@ export function BoardScreen({
       place(p);
       const result = await moveTask(
         p.id,
-        sameHome ? { status: p.status, waitingOn } : { status: p.status, departmentId: p.departmentId, areaId: p.areaId, waitingOn },
+        sameHome
+          ? { status: p.status, waitingOn }
+          : {
+              status: p.status,
+              departmentId: p.departmentId,
+              areaId: p.areaId,
+              waitingOn,
+            },
       );
       if (!result.ok) setError(result.message);
     });
@@ -133,76 +165,121 @@ export function BoardScreen({
     else commit(p);
   }
 
-  const filterHref = (id: string) => {
+  const hrefWith = (key: string, value: string | null) => {
     const next = new URLSearchParams(params);
     next.delete("task");
-    if (id === "all") next.delete("filter");
-    else next.set("filter", id);
+    if (value === null) next.delete(key);
+    else next.set(key, value);
     const qs = next.toString();
     return qs ? `?${qs}` : "?";
   };
+  const nowCount = tasks.filter((t) => t.status === "now").length;
+  const departments = DEPARTMENTS.filter((d) => !isCompanyTeam || canBeShared(d.id));
+  const nothingShown = !departments.some((d) => visible.some((t) => t.departmentId === d.id));
 
   return (
-    <>
-      <div className="toolbar">
-        <div className="chips" aria-label="Show">
-          {FILTERS.map((f) => (
-            <Link key={f.id} href={filterHref(f.id)} className="chip" aria-current={filter === f.id ? "page" : undefined} scroll={false}>
-              {f.label}
-            </Link>
-          ))}
+    <section className="company">
+      <CompanyHead company={view.company} current="" isCompanyTeam={isCompanyTeam}>
+        <span className={`stat${nowCount >= NOW_CAP ? " bad" : ""}`}>
+          Now <b>{nowCount}</b> of {NOW_CAP}
+        </span>
+        <div className="chips" role="group" aria-label="Show">
+          {FILTERS.map((f) => {
+            const n = tasks.filter((t) => matches(f.id, t, meId, today)).length;
+            return (
+              <Link
+                key={f.id}
+                href={hrefWith("filter", f.id === "all" ? null : f.id)}
+                className={`chip${"alert" in f && n > 0 ? " alert" : ""}`}
+                aria-pressed={filter === f.id}
+                scroll={false}
+              >
+                {f.label} <span className="n">{n}</span>
+              </Link>
+            );
+          })}
         </div>
-        <span className="spacer" />
+      </CompanyHead>
+
+      <div className="toolbar">
         {isCompanyTeam ? (
           <span className="muted small">You see the Tasks Sunridge shares with {view.company.name}.</span>
         ) : (
-          <Link className="button" href={`?task=new`} scroll={false}>
+          <Link className="btn primary" href={`?task=new`} scroll={false}>
             Add task
           </Link>
         )}
+        <span className="spacer" />
+        <Link className="toggle" href={hrefWith("empty", showEmpty ? null : "1")} scroll={false} aria-pressed={showEmpty}>
+          <span className="box" aria-hidden="true">
+            {showEmpty ? "✓" : ""}
+          </span>
+          Show empty areas
+        </Link>
+        <span className="legend" aria-hidden="true">
+          <span>
+            <i className="priority-high" />
+            High
+          </span>
+          <span>
+            <i className="priority-medium" />
+            Medium
+          </span>
+          <span>
+            <i className="priority-low" />
+            Low
+          </span>
+        </span>
       </div>
 
       {view.tooManyHigh && !isCompanyTeam && (
         <p className="banner">
-          More than a quarter of {view.company.name}&apos;s open Tasks are High. Would each one really miss a Target, or
-          expose the business, if it slipped a week?
+          More than a quarter of {view.company.name}&apos;s open Tasks are High. Would each one really miss a Target, or expose the
+          business, if it slipped a week?
         </p>
       )}
       {error && (
-        <p className="banner error" role="alert">
+        <p className="banner warn" role="alert">
           {error}
         </p>
       )}
 
       <DndContext id="board" sensors={sensors} onDragEnd={onDragEnd}>
         <div className="board">
-          <div className="grid">
-            <div className="grid-head" aria-hidden="true">
-              <div />
-              {STATUSES.map((s) => (
-                <div key={s}>
-                  {STATUS_LABELS[s]}
-                  {s === "now" && <span className="muted small"> · up to 5</span>}
-                </div>
-              ))}
-            </div>
-            {DEPARTMENTS.filter((d) => !isCompanyTeam || canBeShared(d.id)).map((d) => (
-              <Department
-                key={d.id}
-                id={d.id}
-                name={d.name}
-                areas={view.areas.filter((a) => a.departmentId === d.id)}
-                tasks={visible.filter((t) => t.departmentId === d.id)}
-                filtered={filter !== "all"}
-                members={members}
-                meId={meId}
-                showShared={!isCompanyTeam && view.company.kind === "portfolio"}
-                today={today}
-                documentCounts={view.documentCounts}
-                onOpen={open}
-              />
+          <div className="grid-h" aria-hidden="true">
+            <div>Department · area</div>
+            {STATUSES.map((s) => (
+              <div key={s}>
+                {STATUS_LABELS[s]}
+                {s === "now" && <small> · up to {NOW_CAP}</small>}
+              </div>
             ))}
           </div>
+          {departments.map((d) => (
+            <Department
+              key={d.id}
+              id={d.id}
+              name={d.name}
+              areas={view.areas.filter((a) => a.departmentId === d.id)}
+              tasks={visible.filter((t) => t.departmentId === d.id)}
+              showEmpty={showEmpty}
+              members={members}
+              meId={meId}
+              showShared={!isCompanyTeam && view.company.kind === "portfolio"}
+              today={today}
+              documentCounts={view.documentCounts}
+              onOpen={open}
+            />
+          ))}
+          {nothingShown && !showEmpty && (
+            <p className="empty">
+              {filter === "all"
+                ? isCompanyTeam
+                  ? "Nothing is shared with you yet."
+                  : "No Tasks yet. Add one, or tick Show empty areas to see every Department."
+                : "Nothing matches this filter."}
+            </p>
+          )}
         </div>
       </DndContext>
 
@@ -214,7 +291,7 @@ export function BoardScreen({
           setPendingBlocked(null);
         }}
       />
-    </>
+    </section>
   );
 }
 
@@ -223,43 +300,49 @@ function Department({
   name,
   areas,
   tasks,
-  filtered,
+  showEmpty,
   ...card
 }: {
   id: DepartmentId;
   name: string;
   areas: Area[];
   tasks: Task[];
-  filtered: boolean;
+  showEmpty: boolean;
 } & CardContext) {
-  const open = tasks.some((t) => t.status !== "done");
-  if (filtered && !tasks.length) return null;
+  if (!showEmpty && !tasks.length) return null;
   const rows: { areaId: string | null; label: string }[] = [
     ...areas.map((a) => ({ areaId: a.id, label: a.name })),
-    { areaId: null, label: areas.length ? "Whole department" : "" },
+    { areaId: null, label: "Whole department" },
   ];
   return (
-    <details className="department" open={open}>
-      <summary>
-        <h2>{name}</h2>
-        {!open && <span className="muted small">{tasks.length ? "Nothing open" : "No Tasks yet"}</span>}
-      </summary>
-      {rows.map((row) => (
-        <div className="grid-row" key={row.areaId ?? "whole"}>
-          <div className="area-label">{row.label}</div>
-          {STATUSES.map((status) => (
-            <Cell
-              key={status}
-              id={cellId(id, row.areaId, status)}
-              label={`${name}${row.label ? `, ${row.label}` : ""}, ${STATUS_LABELS[status]}`}
-              tasks={tasks.filter((t) => t.areaId === row.areaId && t.status === status)}
-              collapsed={status === "done"}
-              {...card}
-            />
-          ))}
-        </div>
-      ))}
-    </details>
+    <div className="department" role="group" aria-label={name}>
+      <div className="dept">
+        <h3>{name}</h3>
+        <small>{openLabel(openCount(tasks))}</small>
+      </div>
+      {rows.map((row) => {
+        const rowTasks = tasks.filter((t) => t.areaId === row.areaId);
+        if (!showEmpty && !rowTasks.length) return null;
+        return (
+          <div className="lane" key={row.areaId ?? "whole"}>
+            <div className="lane-l">
+              <b>{row.label}</b>
+              <small>{openLabel(openCount(rowTasks))}</small>
+            </div>
+            {STATUSES.map((status) => (
+              <Cell
+                key={status}
+                id={cellId(id, row.areaId, status)}
+                status={status}
+                label={`${name}${row.areaId ? `, ${row.label}` : ""}, ${STATUS_LABELS[status]}`}
+                tasks={rowTasks.filter((t) => t.status === status)}
+                {...card}
+              />
+            ))}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -273,18 +356,22 @@ interface CardContext {
   onOpen: (taskId: string) => void;
 }
 
-function Cell({ id, label, tasks, collapsed, ...card }: { id: string; label: string; tasks: Task[]; collapsed: boolean } & CardContext) {
+function Cell({ id, status, label, tasks, ...card }: { id: string; status: Status; label: string; tasks: Task[] } & CardContext) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const [showDone, setShowDone] = useState(false);
-  const shown = collapsed && !showDone ? [] : tasks;
+  const collapsed = status === "done" && !showDone;
   return (
-    <div ref={setNodeRef} className={`cell${isOver ? " over" : ""}`} role="group" aria-label={label}>
-      {shown.map((t) => (
-        <Card key={t.id} task={t} {...card} />
-      ))}
-      {collapsed && tasks.length > 0 && (
-        <button className="button quiet show-done" onClick={() => setShowDone(!showDone)}>
-          {showDone ? "Hide done" : "Show done"}
+    <div
+      ref={setNodeRef}
+      className={`cell ${status}${isOver ? " over" : ""}`}
+      data-label={STATUS_LABELS[status]}
+      role="group"
+      aria-label={label}
+    >
+      {!collapsed && tasks.map((t) => <Card key={t.id} task={t} {...card} />)}
+      {status === "done" && tasks.length > 0 && (
+        <button className="btn link more" onClick={() => setShowDone(!showDone)}>
+          {showDone ? "Hide done" : `Show ${tasks.length} done`}
         </button>
       )}
     </div>
@@ -298,19 +385,32 @@ function Card({ task, members, meId, showShared, today, documentCounts, onOpen }
   return (
     <button
       ref={setNodeRef}
-      className={`card priority-${task.priority}${isDragging ? " dragging" : ""}${task.status === "done" ? " done" : ""}`}
+      className={`card p-${task.priority}${isDragging ? " dragging" : ""}${task.status === "done" ? " done" : ""}`}
       onClick={() => onOpen(task.id)}
-      style={transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`, position: "relative", zIndex: 5 } : undefined}
+      style={
+        transform
+          ? {
+              transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+              position: "relative",
+              zIndex: 5,
+            }
+          : undefined
+      }
       // Viewers can open a Task but not drag it, so they get none of the drag attributes (which would mark the card disabled).
-      {...(editable ? { ...attributes, ...listeners, "aria-roledescription": "Draggable Task" } : {})}
+      {...(editable
+        ? {
+            ...attributes,
+            ...listeners,
+            "aria-roledescription": "Draggable Task",
+          }
+        : {})}
     >
       <span className="sr-only">{PRIORITY_LABELS[task.priority]} priority. </span>
-      <div className="title">{task.title}</div>
-      {task.status === "blocked" && task.note && <div className="waiting">Waiting on: {task.note}</div>}
-      <div className="meta">
-        <span title={peopleNames(task.ownerIds, members)}>{peopleInitials(task.ownerIds, members)}</span>
+      <span className="t">{task.title}</span>
+      {task.status === "blocked" && task.note && <span className="w">{task.note}</span>}
+      <span className="m">
         {task.due ? (
-          <span className={late ? "late" : undefined}>{late ? `Overdue · ${formatDay(task.due)}` : formatDay(task.due)}</span>
+          <span className={late ? "late" : undefined}>{late ? `Late · ${formatDay(task.due)}` : formatDay(task.due)}</span>
         ) : (
           task.status !== "done" && <span>No date</span>
         )}
@@ -325,7 +425,15 @@ function Card({ task, members, meId, showShared, today, documentCounts, onOpen }
             <span className="sr-only">Has Documents</span>
           </span>
         ) : null}
-      </div>
+        <span className="r" title={peopleNames(task.ownerIds, members)}>
+          <span className="sr-only">Owners: {peopleNames(task.ownerIds, members)}</span>
+          {task.ownerIds.map((oid) => (
+            <span key={oid} className="av" aria-hidden="true">
+              {initials(members.find((m) => m.id === oid)?.name ?? "?")}
+            </span>
+          ))}
+        </span>
+      </span>
     </button>
   );
 }
@@ -354,8 +462,8 @@ function WaitingOnDialog({ open, onCancel, onConfirm }: { open: boolean; onCance
           <input id="waitingOn" name="waitingOn" type="text" maxLength={200} required autoFocus />
         </div>
         <div className="row">
-          <button className="button">Move to Blocked</button>
-          <button type="button" className="button secondary" onClick={onCancel}>
+          <button className="btn primary">Move to Blocked</button>
+          <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
         </div>
@@ -366,7 +474,7 @@ function WaitingOnDialog({ open, onCancel, onConfirm }: { open: boolean; onCance
 
 function Paperclip() {
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+    <svg className="clip" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d="M21 11.5l-8.5 8.5a5 5 0 0 1-7-7L14 4.5a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 7.5" />
     </svg>
   );

@@ -18,28 +18,45 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en-GB">
       <body>
-        <header className="top">
-          <Link className="brand" href="/">
-            Sunridge Value Board
-          </Link>
-          {me && (
-            <>
-              <Nav companies={companies.map((c) => ({ id: c.id, name: c.name }))} canImport={me.kind === "member"} />
-              <div className="who">
-                <span>{me.name}</span>
-                {portalUrl && (
-                  <a className="button quiet small" href={portalUrl}>
-                    HBF Portal
-                  </a>
-                )}
-                <form action="/auth/signout" method="post">
-                  <button className="button quiet small">Sign out</button>
-                </form>
+        <div className="wrap">
+          <header className="mast">
+            <div className="label">
+              <span>Sunridge Partners</span>
+              <span aria-hidden="true">·</span>
+              <span>Value Creation and Investment</span>
+              <span className="tagbox">Internal</span>
+              {me && (
+                <span className="who">
+                  <span>{me.name}</span>
+                  {portalUrl && <a href={portalUrl}>HBF Portal</a>}
+                  <form action="/auth/signout" method="post">
+                    <button className="linkish">Sign out</button>
+                  </form>
+                </span>
+              )}
+            </div>
+            <div className="head">
+              <Link href="/" className="logo">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/sunridge-logo.png" alt="Sunridge Partners" width={130} height={34} />
+              </Link>
+              <span className="vr" aria-hidden="true" />
+              <div>
+                <h1>
+                  Value<span className="bar-g">|</span>
+                  <em>Board</em>
+                </h1>
+                <div className="sub">What matters most, who owns it, what is blocked, and the files behind it</div>
               </div>
-            </>
-          )}
-        </header>
-        {children}
+            </div>
+            {me && <Nav companies={companies.map((c) => ({ id: c.id, name: c.name }))} canImport={me.kind === "member"} />}
+          </header>
+          {children}
+          <footer className="pagefoot">
+            <span>Strictly confidential</span>
+            <span>Sunridge Partners</span>
+          </footer>
+        </div>
       </body>
     </html>
   );
