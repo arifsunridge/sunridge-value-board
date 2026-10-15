@@ -1,4 +1,5 @@
 import {
+  TEAM_BOARD_SOURCE,
   DOCUMENT_KINDS,
   DOCUMENT_STATUSES,
   HIGH_SHARE_WARNING,
@@ -224,6 +225,22 @@ export class Board {
     return tasks
       .filter((t) => !t.removed && canSee(me, t) && (t.ownerIds.includes(me.id) || t.contributorIds.includes(me.id)))
       .sort(compareTasks);
+  }
+
+  /**
+   * Team board ids to the Tasks that came from them, read from each Task's first Trail entry (ADR 0007).
+   * Members only: the sync runs as a Member.
+   */
+  async teamBoardLinks(who: Reader): Promise<Map<string, string>> {
+    await this.requireMember(who, "sync with the team board");
+    const links = new Map<string, string>();
+    for (const company of await this.store.listCompanies()) {
+      for (const e of await this.store.listTrail({ companyId: company.id })) {
+        const match = e.subject === "task" && e.action === "created" && e.taskId ? e.old?.match(TEAM_BOARD_SOURCE) : null;
+        if (match) links.set(match[1]!, e.taskId!);
+      }
+    }
+    return links;
   }
 
   async removedTasks(who: Reader, companyId: string): Promise<Task[]> {
@@ -782,6 +799,9 @@ export class Board {
 
   private async requireEditable(actor: Actor, id: string): Promise<Task> {
     const task = await this.requireVisible(actor, id);
+    // The team board sync copies changes people made on the team board. It acts as a Member, and any
+    // Member may join any Task to change it, so the sync needn't join first (ADR 0007).
+    if (actor.via === "sync" && isMember(await this.person(actor))) return task;
     if (!canEdit(task, actor.memberId)) {
       throw new BoardError("not_allowed", "Only this Task's Owners and Contributors can change it. Join it first.");
     }

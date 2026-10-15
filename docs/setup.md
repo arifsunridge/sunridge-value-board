@@ -39,17 +39,18 @@ The portal change that goes with this board (`hbf-portal`, branch `claude/vibran
 
 The board refuses to start in production without the portal and database settings. A person the portal hasn't granted the Value Board sees a no-access page with a link back to the portal.
 
-## 4. Moving the team board across
+## 4. Sync with the team board (Arif)
 
-The team works today in the "Sunridge team board" Claude artifact. Move it across once the board is live, then stop editing the artifact, so there's one board:
+The team keeps using the "Sunridge team board" Claude artifact, and the two boards stay in sync both ways every hour ([ADR 0007](adr/0007-two-way-sync-with-the-team-board.md)).
 
-1. Export the artifact's database (the `projects`, `categories`, `actions` and `documents` collections, one JSON file per document, one folder per collection) into `private/team-board/` (git-ignored).
-2. Write `private/team-board.json`: `{ "people": { "u_…": "<email>" }, "guessed": [], "companies": { "p-hbf": "HBF", … } }`, mapping the artifact's user ids to people's emails and its projects to the board's companies.
-3. `npm run import -- prepare-team-board private/team-board --config private/team-board.json --out private/review.json`
-4. Everyone named as an Owner signs in to the board once, so the board knows them.
-5. On the board, **Import** (Members only): upload `review.json`, check every row, choose an Owner where there is none, untick what you don't want, and import. Tasks come in as you, with their Status, Documents and Priority, and are not Shared. A company's Now holds 10: the rest come in as Next, and the screen says which. Running it again adds nothing already on the board.
+1. Render, `sunridge-value-board`: set `SYNC_TOKEN` (a random secret of at least 32 characters) and `SYNC_AS_EMAIL` (the Member the sync acts as; they must have signed in to the board once).
+2. The artifact holds the sync's settings in its `valueBoardSync` collection, document `config`: `people` (the artifact's `u_…` ids to emails), `projects` (artifact projects to board Companies), `newTaskProject` (which project gets Tasks added on the board) and `syncAs` (the `u_…` id of `SYNC_AS_EMAIL`).
+3. Claude environment for the routine: allow `sunridge-value-board.onrender.com` under Network access, and add `SYNC_TOKEN` as a secret.
+4. The routine, hourly: read the four collections with ArtifactData into a folder, run `node scripts/team-board-sync.mjs <folder> <out>`, then apply each batch in `<out>/batches.json` with ArtifactData `batch`.
 
-The older prototype backup is prepared with `npm run import -- prepare` instead, and imports the same way.
+Everyone named as an Owner should sign in to the board once, so the board knows them. Until then their Tasks are owned by the syncing Member.
+
+The older one-time import (`npm run import -- prepare-team-board`, then **Import** on the board) still works for a fresh start.
 
 ## 5. Capture
 

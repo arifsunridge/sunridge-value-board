@@ -48,7 +48,7 @@ function value(field: string | null, raw: string | null, members: Person[], name
   return `“${raw}”`;
 }
 
-const VIA: Record<TrailEntry["via"], string> = { screen: "", capture: " from meeting notes", claude: " via Claude", import: " from the prototype import" };
+const VIA: Record<TrailEntry["via"], string> = { screen: "", capture: " from meeting notes", claude: " via Claude", import: " from the prototype import", sync: " from the team board" };
 
 /** One plain-English line per Trail entry. */
 export function describe(entry: TrailEntry, members: Person[], names: Record<string, string> = {}): string {
