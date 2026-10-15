@@ -149,6 +149,24 @@ describe("the team board sync", () => {
     expect((await board.task(arif, speeds.id)).task.ownerIds).toEqual(["m-arif", "m-jack"]);
   });
 
+  it("stands in as Owner until the team board's Owner signs in, then hands over", async () => {
+    const snap = snapshot();
+    snap.config = { ...config, people: { ...config.people, u_new: "new.person@example.com" } };
+    snap.actions.a1 = { ...snap.actions.a1!, ownerIds: ["u_new"] };
+    await run(snap);
+    const speeds = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title === "Check sample line speeds")!;
+    expect(speeds.ownerIds).toEqual(["m-arif"]);
+    clock = new Date("2026-10-14T12:00:00Z");
+    expect((await run(snap)).plan.artifact.filter((w) => w.doc_id === "a1")).toEqual([]);
+
+    await board.recordPerson({ id: "new.person@example.com", email: "new.person@example.com", name: "New Example", kind: "member", companyId: null });
+    clock = new Date("2026-10-14T13:00:00Z");
+    const { plan } = await run(snap);
+    expect(plan.artifact.filter((w) => w.doc_id === "a1")).toEqual([]);
+    expect((await board.task(arif, speeds.id)).task.ownerIds).toEqual(["new.person@example.com"]);
+    expect(snap.actions.a1!.ownerIds).toEqual(["u_new"]);
+  });
+
   it("removes a Task on the board when it is removed on the team board", async () => {
     const snap = snapshot();
     await run(snap);

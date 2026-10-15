@@ -13,7 +13,8 @@ export async function readBoardSide(board: Board, actor: Actor): Promise<BoardSi
     areas.push(...view.areas);
     tasks.push(...view.tasks, ...removed);
   }
-  return { companies, areas, tasks, links: await board.teamBoardLinks(actor) };
+  const people = (await board.people(actor)).map((p) => p.id);
+  return { companies, areas, tasks, links: await board.teamBoardLinks(actor), people };
 }
 
 export interface ApplyResult {

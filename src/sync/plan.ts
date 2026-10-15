@@ -73,6 +73,8 @@ export interface BoardSide {
   tasks: Task[];
   /** Team board id → Task id, for Tasks that came from the team board. */
   links: Map<string, string>;
+  /** Ids of the people the board knows. Only they can be Owners. */
+  people: string[];
 }
 
 /** A Task as both boards can express it, in the board's terms. */
@@ -135,7 +137,10 @@ export function fromTeamBoard(action: TeamBoardAction, snapshot: TeamBoardSnapsh
   const isArea = Boolean(category?.parentId);
   const deptKey = (isArea ? category!.parentId! : (action.categoryId ?? "")).replace(/^d-/, "");
   const status: Status = (STATUSES as readonly string[]).includes(action.status) ? (action.status as Status) : "next";
-  const owners = (action.ownerIds ?? []).map((u) => snapshot.config.people[u]).filter((e): e is string => Boolean(e));
+  const known = new Set(side.people.map((p) => p.toLowerCase()));
+  const owners = (action.ownerIds ?? [])
+    .map((u) => snapshot.config.people[u]?.toLowerCase())
+    .filter((e): e is string => Boolean(e) && known.has(e!));
   const note = shortNote(status === "blocked" ? action.waitingOn || action.note || "" : action.note || "").note;
   return {
     companyId: company.id,
@@ -144,7 +149,7 @@ export function fromTeamBoard(action: TeamBoardAction, snapshot: TeamBoardSnapsh
     title: cutTitle(action.title) || "Untitled Task from the team board",
     status,
     priority: (PRIORITIES as readonly string[]).includes(action.priority ?? "") ? (action.priority as Priority) : "medium",
-    ownerIds: sortIds(owners.length ? owners : [fallbackOwner]),
+    ownerIds: sortIds(owners.length ? owners : [fallbackOwner.toLowerCase()]),
     due: action.due && /^\d{4}-\d{2}-\d{2}$/.test(action.due) ? action.due : null,
     note,
     removed: Boolean(action.removed),
@@ -219,7 +224,7 @@ function same(a: Shape, b: Shape, field: Field): boolean {
  */
 export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: string): SyncPlan {
   const plan: SyncPlan = { board: [], artifact: [], skipped: [] };
-  const fallbackOwner = snapshot.config.people[snapshot.config.syncAs];
+  const fallbackOwner = snapshot.config.people[snapshot.config.syncAs]?.toLowerCase();
   if (!fallbackOwner) throw new Error("The sync config's syncAs has no email in people.");
   const tasksById = new Map(side.tasks.map((t) => [t.id, t]));
   const linkedTaskIds = new Set<string>();
@@ -251,11 +256,24 @@ export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: stri
     const differing = FIELDS.filter((f) => !same(shape, roundTrip, f));
     if (!differing.length) continue;
     const teamBoardTime = action.editedAt ?? action.createdAt ?? "";
+    // The syncing Member stands in as Owner until the team board's Owners sign in; a stand-in never wins.
+    const standIn = boardShape.ownerIds.join(",") === fallbackOwner && !shape.ownerIds.includes(fallbackOwner);
+    const update = (fields: Field[]): BoardOp => ({
+      kind: "update",
+      teamBoardId: id,
+      taskId: task.id,
+      shape: { ...shape, ownerIds: keepUnknownOwners(shape, boardShape, snapshot) },
+      fields,
+    });
     if (teamBoardTime > task.updatedAt) {
-      plan.board.push({ kind: "update", teamBoardId: id, taskId: task.id, shape: { ...shape, ownerIds: keepUnknownOwners(shape, boardShape, snapshot) }, fields: differing });
-    } else {
-      plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data: { ...toTeamBoard(task, snapshot, side, action), ...edited } });
+      plan.board.push(update(differing));
+      continue;
     }
+    if (standIn && differing.includes("ownerIds")) plan.board.push(update(["ownerIds"]));
+    if (standIn && differing.length === 1 && differing[0] === "ownerIds") continue;
+    const data: Record<string, unknown> = { ...toTeamBoard(task, snapshot, side, action), ...edited };
+    if (standIn) delete data.ownerIds;
+    plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data });
   }
 
   // Tasks added on the board go to the team board.
