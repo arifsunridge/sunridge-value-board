@@ -35,6 +35,10 @@ const schema = z
     ANTHROPIC_API_KEY: z.string().optional(),
     ENTRA_TENANT_ID: z.string().optional(),
     ENTRA_CLIENT_ID: z.string().optional(),
+
+    /** The team board sync (ADR 0007): its shared secret, and the Member it acts as. Both unset: off. */
+    SYNC_TOKEN: z.string().min(32, "SYNC_TOKEN must be at least 32 characters.").optional(),
+    SYNC_AS_EMAIL: z.string().email().optional(),
   })
   .superRefine((env, ctx) => {
     const fail = (message: string) => ctx.addIssue({ code: "custom", message });
@@ -51,6 +55,7 @@ const schema = z
       fail(`DB_HOST ${env.DB_HOST} is the live HBF database. The board uses its own database on the Render MySQL.`);
     }
     if (env.CAPTURE_ENABLED === "true") need(["ANTHROPIC_API_KEY"], "for Capture");
+    if (env.SYNC_TOKEN) need(["SYNC_AS_EMAIL"], "for the team board sync");
     if (env.CLAUDE_ACCESS_ENABLED === "true" && env.AUTH_MODE === "portal") {
       need(["ENTRA_TENANT_ID", "ENTRA_CLIENT_ID"], "for Claude access");
     }

@@ -107,7 +107,12 @@ export interface Document {
   createdBy: string;
 }
 
-export type Via = "screen" | "capture" | "claude" | "import";
+export type Via = "screen" | "capture" | "claude" | "import" | "sync";
+
+/** Where a Task from the team board came from, kept in its first Trail entry; the link for the sync (ADR 0007). */
+export const teamBoardSource = (teamBoardId: string): string => `Team board (${teamBoardId})`;
+/** Matches teamBoardSource, and the earlier import's "Team board import (id)". */
+export const TEAM_BOARD_SOURCE = /^Team board(?: import)? \(([^()]+)\)$/;
 
 export interface TrailEntry {
   id: string;
