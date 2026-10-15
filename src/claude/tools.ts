@@ -13,6 +13,7 @@ import {
   PRIORITY_RULE,
   STATUSES,
   STATUS_LABELS,
+  NOW_CAP,
   TITLE_MAX_WORDS,
   departmentName,
   isOpen,
@@ -33,7 +34,7 @@ const INSTRUCTIONS = `This is the Sunridge Value Board: the Value Creation and I
 
 Words: a Company has six Departments (${DEPARTMENTS.map((d) => d.name).join(", ")}); an Area is a slice of one Department in one Company. A Task lives in one Company and Department, and at most one Area. Status is Next, Now, Blocked or Done. Owners are accountable; Contributors help; anyone else is a Viewer and cannot change the Task until they join it.
 
-Rules the board enforces: titles have at most ${TITLE_MAX_WORDS} words and start with a verb, with no people's names; every Task has at least one Owner; each Company has at most 5 Tasks in Now; moving a Task to Blocked needs a one-line "waiting on". Priority uses the one-week slip test: High = ${PRIORITY_RULE.high} Medium = ${PRIORITY_RULE.medium} Low = ${PRIORITY_RULE.low} High should be rare.
+Rules the board enforces: titles have at most ${TITLE_MAX_WORDS} words and start with a verb, with no people's names; every Task has at least one Owner; each Company has at most ${NOW_CAP} Tasks in Now; moving a Task to Blocked needs a one-line "waiting on". Priority uses the one-week slip test: High = ${PRIORITY_RULE.high} Medium = ${PRIORITY_RULE.medium} Low = ${PRIORITY_RULE.low} High should be rare.
 
 Before changing anything, confirm the change with the person unless they asked for it explicitly. Never invent Tasks, figures or owners.`;
 
@@ -350,7 +351,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
     "move_task",
     {
       title: "Move a Task",
-      description: "Change a Task's Status, and optionally its Department or Area within the same company. Moving to Now is refused when the company already has 5 Tasks in Now. Moving to Blocked needs waiting_on.",
+      description: `Change a Task's Status, and optionally its Department or Area within the same company. Moving to Now is refused when the company already has ${NOW_CAP} Tasks in Now. Moving to Blocked needs waiting_on.`,
       inputSchema: {
         task_id: z.string(),
         status: statusSchema,

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Board, type Actor } from "@/board/board";
+import { NOW_CAP } from "@/board/model";
 import { MemoryStore } from "@/store/memory";
 import { demoSeed } from "@/store/seed";
 import { applyReview } from "./apply";
@@ -33,6 +34,10 @@ const exported: TeamBoardExport = {
     d2: { taskId: "a1", kind: "claude", status: "final", title: "Not https", url: "http://example.com" },
   },
 };
+const NUMBERS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+/** Titles that fill a Company's Now up to the cap, after the demo seed's 2. */
+const NOW_FILLERS = NUMBERS.slice(0, NOW_CAP - 2).map((n) => `Draft plan ${n}`);
+
 const options = {
   people: { u_one: "m-theran", u_two: "m-jack" },
   guessed: ["u_two"],
@@ -122,7 +127,7 @@ describe("applying a reviewed import", () => {
   });
 
   it("leaves a Task in Next when the company's Now is full, and says so", async () => {
-    for (const title of ["Draft the plan", "Book the visit", "Order new parts"]) {
+    for (const title of NOW_FILLERS) {
       await board.createTask(arif, { companyId: "c-hbf", departmentId: "operations", title, priority: "low", ownerIds: ["m-arif"], status: "now" });
     }
     const items = prepareTeamBoard(exported, { people, companies }).map((i) => ({ ...i, approved: true }));

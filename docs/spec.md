@@ -76,8 +76,8 @@ Each goal is measured from the Trail, so none needs manual tracking.
 - [ ] At least one Owner is required. Owners and Contributors are picked from Members, never typed into the title.
 - [ ] A Task with no due date shows a quiet "no date" marker.
 
-**P0.4 Now cap.** At most 5 Tasks in Now per Company.
-- [ ] Moving a 6th Task into Now is refused: "HBF already has 5 Tasks in Now. Move one out first."
+**P0.4 Now cap.** At most 10 Tasks in Now per Company (raised from 5 to match how the team works on the team board).
+- [ ] Moving an 11th Task into Now is refused: "HBF already has 10 Tasks in Now. Move one out first."
 - [ ] The cap counts Tasks, not people. One person may own several Tasks in Now.
 
 **P0.5 Priority.** High / Medium / Low, decided by the one-week slip test (see Glossary).

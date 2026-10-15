@@ -16,6 +16,7 @@ import { useEffect, useOptimistic, useRef, useState, useTransition } from "react
 import { moveTask } from "@/app/actions";
 import { canEdit, isOverdue, type BoardView } from "@/board/board";
 import {
+  NOW_CAP,
   DEPARTMENTS,
   canBeShared,
   PRIORITY_LABELS,
@@ -182,7 +183,7 @@ export function BoardScreen({
               {STATUSES.map((s) => (
                 <div key={s}>
                   {STATUS_LABELS[s]}
-                  {s === "now" && <span className="muted small"> · up to 5</span>}
+                  {s === "now" && <span className="muted small"> · up to {NOW_CAP}</span>}
                 </div>
               ))}
             </div>

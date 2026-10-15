@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Board } from "@/board/board";
+import { NOW_CAP } from "@/board/model";
 import { MemoryStore } from "@/store/memory";
 import { demoSeed } from "@/store/seed";
 import { handleMcp, protectedResourceMetadata, type EndpointOptions } from "./endpoint";
@@ -34,6 +35,10 @@ async function connect(token = "dev:m-theran") {
 }
 
 type Result = Awaited<ReturnType<Client["callTool"]>>;
+const NUMBERS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+/** Titles that fill a Company's Now up to the cap, after the demo seed's 2. */
+const NOW_FILLERS = NUMBERS.slice(0, NOW_CAP - 2).map((n) => `Draft plan ${n}`);
+
 const text = (r: Result) => (r.content as { type: string; text: string }[])[0]!.text;
 const json = (r: Result) => JSON.parse(text(r));
 
@@ -96,7 +101,7 @@ describe("Claude endpoint: tools", () => {
       ].sort(),
     );
     expect(tools.find((t) => t.name === "list_tasks")?.annotations?.readOnlyHint).toBe(true);
-    expect(client.getInstructions()).toContain("at most 5 Tasks in Now");
+    expect(client.getInstructions()).toContain(`at most ${NOW_CAP} Tasks in Now`);
   });
 
   it("answers 'what is blocked at HBF?' with names, not IDs", async () => {
@@ -151,13 +156,13 @@ describe("Claude endpoint: tools", () => {
     expect(text(notMember)).toContain("isn't a Sunridge Member");
   });
 
-  it("refuses a sixth Task in Now", async () => {
+  it("refuses one more Task in Now than the cap", async () => {
     const client = await connect();
-    for (const title of ["Draft one", "Draft two", "Draft three"]) {
+    for (const title of NOW_FILLERS) {
       await client.callTool({ name: "create_task", arguments: { company: "HBF", department: "Strategic planning", title, priority: "low", owners: ["me"], status: "now" } });
     }
-    const sixth = await client.callTool({ name: "move_task", arguments: { task_id: "t-2", status: "now" } });
-    expect(text(sixth)).toBe("HBF already has 5 Tasks in Now. Move one out first.");
+    const extra = await client.callTool({ name: "move_task", arguments: { task_id: "t-2", status: "now" } });
+    expect(text(extra)).toBe(`HBF already has ${NOW_CAP} Tasks in Now. Move one out first.`);
   });
 
   it("gives the Partner summary", async () => {
