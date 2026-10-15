@@ -1,6 +1,6 @@
 import { board } from "@/server/context";
 import { requirePerson } from "@/server/session";
-import { CompanyViews } from "@/ui/CompanyViews";
+import { CompanyHead } from "@/ui/CompanyViews";
 import { TaskList } from "@/ui/TaskList";
 
 /** The Partner view: two minutes to judge execution before a call. */
@@ -15,33 +15,32 @@ export default async function SummaryPage({ params }: { params: Promise<{ compan
 
   return (
     <main>
-      <div className="toolbar">
-        <h1 style={{ margin: 0 }}>{summary.company.name}: summary</h1>
-        <CompanyViews companyId={companyId} current="/summary" isCompanyTeam={me.kind === "company"} />
+      <CompanyHead company={summary.company} current="/summary" isCompanyTeam={me.kind === "company"} />
+
+      <div className="sumgrid">
+        <section>
+          <h2>Needs attention</h2>
+          <p className="muted small">Blocked first, then High.</p>
+          <TaskList tasks={summary.attention} members={members} areas={areas} today={today} empty="Nothing is Blocked or High." />
+        </section>
+
+        <section>
+          <h2>Late</h2>
+          <TaskList tasks={summary.overdue} members={members} areas={areas} today={today} empty="Nothing is late." />
+        </section>
+
+        <section>
+          <h2>Changed in the last 7 days</h2>
+          <TaskList
+            tasks={summary.changes.map((c) => c.task)}
+            members={members}
+            areas={areas}
+            today={today}
+            notes={notes}
+            empty="No changes this week."
+          />
+        </section>
       </div>
-
-      <section>
-        <h2>Needs attention</h2>
-        <p className="muted small">Blocked first, then High.</p>
-        <TaskList tasks={summary.attention} members={members} areas={areas} today={today} empty="Nothing is Blocked or High." />
-      </section>
-
-      <section>
-        <h2>Overdue</h2>
-        <TaskList tasks={summary.overdue} members={members} areas={areas} today={today} empty="Nothing is overdue." />
-      </section>
-
-      <section>
-        <h2>Changed in the last 7 days</h2>
-        <TaskList
-          tasks={summary.changes.map((c) => c.task)}
-          members={members}
-          areas={areas}
-          today={today}
-          notes={notes}
-          empty="No changes this week."
-        />
-      </section>
 
       <details>
         <summary>

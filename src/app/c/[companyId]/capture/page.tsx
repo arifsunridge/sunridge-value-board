@@ -4,7 +4,7 @@ import { board } from "@/server/context";
 import { config } from "@/server/config";
 import { requirePerson } from "@/server/session";
 import { CaptureScreen } from "@/ui/CaptureScreen";
-import { CompanyViews } from "@/ui/CompanyViews";
+import { CompanyHead } from "@/ui/CompanyViews";
 
 export default async function CapturePage({ params }: { params: Promise<{ companyId: string }> }) {
   const { companyId } = await params;
@@ -17,10 +17,7 @@ export default async function CapturePage({ params }: { params: Promise<{ compan
   const enabled = config().CAPTURE_ENABLED === "true";
   return (
     <main>
-      <div className="toolbar">
-        <h1 style={{ margin: 0 }}>{view.company.name}: capture from meeting notes</h1>
-        <CompanyViews companyId={companyId} current="/capture" />
-      </div>
+      <CompanyHead company={view.company} current="/capture" />
       {enabled ? (
         <CaptureScreen company={view.company} areas={view.areas} members={members} today={b.today()} />
       ) : (

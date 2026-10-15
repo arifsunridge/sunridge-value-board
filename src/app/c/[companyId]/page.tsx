@@ -4,7 +4,6 @@ import { BoardError } from "@/board/rules";
 import { board } from "@/server/context";
 import { requirePerson } from "@/server/session";
 import { BoardScreen } from "@/ui/BoardScreen";
-import { CompanyViews } from "@/ui/CompanyViews";
 import { TaskPanel, type PanelData } from "@/ui/TaskPanel";
 
 export default async function CompanyBoard({
@@ -12,10 +11,10 @@ export default async function CompanyBoard({
   searchParams,
 }: {
   params: Promise<{ companyId: string }>;
-  searchParams: Promise<{ task?: string; filter?: string }>;
+  searchParams: Promise<{ task?: string; filter?: string; empty?: string }>;
 }) {
   const { companyId } = await params;
-  const { task: taskId, filter } = await searchParams;
+  const { task: taskId, filter, empty } = await searchParams;
   const me = await requirePerson(`/c/${companyId}`);
   const isCompanyTeam = me.kind === "company";
   const b = board();
@@ -39,20 +38,22 @@ export default async function CompanyBoard({
         canEdit: canEdit(detail.task, me.id),
         allAreas: allAreas.flat(),
         // Tasks this Person can move a Document to.
-        moveTargets: view.tasks
-          .filter((t) => t.id !== detail.task.id && canEdit(t, me.id))
-          .map((t) => ({ id: t.id, title: t.title })),
+        moveTargets: view.tasks.filter((t) => t.id !== detail.task.id && canEdit(t, me.id)).map((t) => ({ id: t.id, title: t.title })),
       };
     }
   }
 
   return (
     <main>
-      <div className="toolbar">
-        <h1 style={{ margin: 0 }}>{view.company.name}</h1>
-        <CompanyViews companyId={companyId} current="" isCompanyTeam={isCompanyTeam} />
-      </div>
-      <BoardScreen view={view} members={members} meId={me.id} isCompanyTeam={isCompanyTeam} today={b.today()} filter={filter ?? "all"} />
+      <BoardScreen
+        view={view}
+        members={members}
+        meId={me.id}
+        isCompanyTeam={isCompanyTeam}
+        today={b.today()}
+        filter={filter ?? "all"}
+        showEmpty={empty === "1"}
+      />
       {panel && (
         <TaskPanel
           data={panel}
