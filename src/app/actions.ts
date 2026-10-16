@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { Actor, Board, Move, NewTask, TaskChanges } from "@/board/board";
+import type { Actor, Board, Move, NewProject, NewTask, ProjectChanges, TaskChanges } from "@/board/board";
 import type { DocumentKind, DocumentStatus } from "@/board/model";
 import { BoardError } from "@/board/rules";
 import { board } from "@/server/context";
@@ -66,6 +66,25 @@ export async function removeDocument(id: string) {
 }
 export async function restoreDocument(id: string) {
   return run((b, a) => b.restoreDocument(a, id));
+}
+
+export async function createProject(input: NewProject) {
+  return run((b, a) => b.createProject(a, input));
+}
+export async function updateProject(id: string, changes: ProjectChanges) {
+  return run((b, a) => b.updateProject(a, id, changes));
+}
+export async function moveProject(id: string, to: { departmentId: string; areaId: string | null }) {
+  return run((b, a) => b.moveProject(a, id, to));
+}
+export async function removeProject(id: string) {
+  return run((b, a) => b.removeProject(a, id));
+}
+export async function restoreProject(id: string) {
+  return run((b, a) => b.restoreProject(a, id));
+}
+export async function addProjectUpdate(id: string, text: string) {
+  return run((b, a) => b.addProjectUpdate(a, id, { text }));
 }
 
 export async function createArea(input: { companyId: string; departmentId: string; name: string }) {

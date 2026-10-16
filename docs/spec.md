@@ -32,7 +32,7 @@ Each goal is measured from the Trail, so none needs manual tracking.
 - **No access for portfolio company staff beyond Shared Tasks** ([ADR 0005](adr/0005-company-teams-see-shared-tasks.md)). The Company team sees and updates only what Members share with them; everything else reaches the board through Members.
 - **No file storage in the app** ([ADR 0002](adr/0002-data-at-rest-inside-the-tenant.md)). SharePoint holds files and their versions; the app holds links.
 - **No scoring, effort estimates or time tracking.** The score was noise; Priority plus a due date is enough.
-- **No project planning tools** (Gantt charts, dependencies between Tasks, sub-tasks). They add maintenance and nobody asked for them. A Task that needs sub-tasks is too big and should be split.
+- **No project planning tools** (Gantt charts, dependencies between Tasks, sub-tasks). They add maintenance and nobody asked for them. A Task that needs sub-tasks is too big and should be split. Projects group Tasks with a goal, an Owner, a Phase and Updates ([ADR 0008](adr/0008-projects-group-tasks-in-a-home.md)), and stop there.
 - **No replacement for Excel models, Teams chat or email.** The board points at the evidence; it doesn't become it.
 - **No phone app.** The web board must work on a phone screen, and that is enough.
 
@@ -70,10 +70,10 @@ Each goal is measured from the Trail, so none needs manual tracking.
 - [ ] A Task cannot be dragged to another Company. Changing Company is an explicit edit and is logged.
 - [ ] Empty Departments are collapsed by default.
 
-**P0.3 Task.** Fields: title, Home, Status, Priority, Owners (one or more), Contributors (optional), due date (optional), note (optional).
+**P0.3 Task.** Fields: title, Home, Status, Priority, Owners (optional: People or typed names), company owner (optional, portfolio Companies), Project (optional), Contributors (optional), due date (optional), note (optional).
 - [ ] The title has at most 8 words. If the first word isn't a verb, the board shows a gentle prompt, not a block.
 - [ ] The note has at most 2 lines (about 200 characters).
-- [ ] At least one Owner is required. Owners and Contributors are picked from Members, never typed into the title.
+- [ ] Owners are People on the board or names typed in the Owners field, never in the title. A Task with no Owner shows "Needs an owner" ([ADR 0009](adr/0009-owners-optional-people-from-the-portal.md)).
 - [ ] A Task with no due date shows a quiet "no date" marker.
 
 **P0.4 Now cap.** At most 10 Tasks in Now per Company (raised from 5 to match how the team works on the team board).
@@ -101,10 +101,10 @@ Each goal is measured from the Trail, so none needs manual tracking.
 
 **P0.10 Capture.** A Member pastes meeting notes for a Company, and Claude returns Suggestions. Each one has a title (at most 8 words, starting with a verb), a Home, Priority, Owners and a due date if the notes give one.
 - [ ] Nothing reaches the board until a Member confirms each Suggestion. The Member can edit or discard any of them.
-- [ ] Suggestions follow the Glossary rules: Owners are Members only, with no names in titles. Suggestions for HBF content use US English.
+- [ ] Suggestions follow the Glossary rules: Owners are People or typed names, with no names in titles. Suggestions for HBF content use US English.
 - [ ] The pasted notes are not stored. Each confirmed Task's Trail records "from notes of [date], confirmed by [Member]".
 
-**P0.11 Views.** "My Tasks" (Owner or Contributor, across Companies). Filters: High, Blocked, Overdue, No owner or no date.
+**P0.11 Views.** "My Tasks" (Owner or Contributor, across Companies). Filters: High, Blocked, Overdue, Needs an owner, No date. Projects: each with its goal, Owner, Phase, Progress and Updates.
 - [ ] A **Summary** view per Company for Partners: High and Blocked first, overdue flagged, a list of what changed in the last 7 days, and everything else collapsed.
 
 **P0.12 Areas.** Any Member can add, rename or retire an Area for a Company. Retiring an Area that still has open Tasks asks where to move them.
@@ -118,7 +118,7 @@ Each goal is measured from the Trail, so none needs manual tracking.
 **P0.15 Shared Tasks for the Company team** ([ADR 0005](adr/0005-company-teams-see-shared-tasks.md)).
 - [ ] A Member can mark a Task Shared, except in Talent & organisation and Finance. Shared is off by default and recorded in the Trail.
 - [ ] The Company team sees only its Company's Shared Tasks, on the board, the Summary and My Tasks. Any other Task answers "not found".
-- [ ] Someone in the Company team can own or contribute to a Shared Task, and on those can change Status, title, due date and note, and add Links. Every Task keeps at least one Member as Owner.
+- [ ] Someone in the Company team can own or contribute to a Shared Task, and on those can change Status, title, due date and note, and add Links. Any Member may change a Task none of whose Owners has signed in (ADR 0009).
 - [ ] Stopping sharing takes the Company team off the Task. A Shared Task can't change Company or move into Talent & organisation or Finance.
 
 ### P1: soon after v1 (design for these now)
@@ -126,7 +126,7 @@ Each goal is measured from the Trail, so none needs manual tracking.
 **P1.1 Claude reads and updates the board.** From Claude chat or Claude Code, a Member can list, search and read Tasks. They can also create, update (Status, Priority, Owners, due date, note), remove and restore Tasks, and add Document links.
 - [ ] Claude acts as the signed-in Member, with exactly that Member's permissions. There is no shared service account.
 - [ ] Every change made through Claude appears in the Trail as "[Member] via Claude".
-- [ ] The same rules apply as on screen: the Now cap, the title length and at least one Owner.
+- [ ] The same rules apply as on screen: the Now cap, the title length and who may change a Task. Claude can also read and keep Projects (list, create, change, add Updates), set Owners by name, and mark a Task Done with its evidence.
 - *Design now:* every board action goes through one set of named operations, which the screen and Claude both use. That way, adding Claude doesn't mean a second set of business rules.
 
 **P1.2 "This week" digest.** A Summary of what moved to Done, what became Blocked and what went overdue. Copy-ready for the partner update.

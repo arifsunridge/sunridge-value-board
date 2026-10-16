@@ -4,14 +4,17 @@ import {
   DOCUMENT_STATUSES,
   HIGH_SHARE_WARNING,
   NOW_CAP,
+  PHASES,
   PRIORITIES,
   STATUSES,
   STATUS_LABELS,
+  UPDATE_MAX_CHARS,
   canBeShared,
   canSee,
   isDepartmentId,
   isMember,
   isOpen,
+  progress,
   type Area,
   type Company,
   type DepartmentId,
@@ -19,12 +22,16 @@ import {
   type DocumentKind,
   type DocumentStatus,
   type Person,
+  type Phase,
   type Priority,
+  type Project,
+  type ProjectUpdate,
   type Status,
   type Task,
   type TrailEntry,
   type Via,
 } from "./model";
+import { People } from "./people";
 import { BoardError, cleanDue, cleanName, cleanNote, cleanTitle, cleanUrl } from "./rules";
 import type { Store } from "@/store/store";
 
@@ -47,8 +54,15 @@ export interface NewTask {
   title: string;
   priority: Priority;
   status?: Status;
-  ownerIds: string[];
+  /** Owners on the board. A Task may start with no Owner (ADR 0009). */
+  ownerIds?: string[];
+  /** Owners typed by name, for people who aren't on the board. */
+  ownerNames?: string[];
   contributorIds?: string[];
+  /** Who answers for it at the portfolio company, by name. */
+  companyOwner?: string;
+  /** The Project it is part of. Its Home then comes from the Project. */
+  projectId?: string | null;
   due?: string | null;
   note?: string | null;
   /** Visible to the Company team. Off unless set. */
@@ -63,9 +77,38 @@ export interface TaskChanges {
   title?: string;
   priority?: Priority;
   ownerIds?: string[];
+  ownerNames?: string[];
   contributorIds?: string[];
+  companyOwner?: string;
+  /** Putting a Task in a Project moves it to the Project's Home; null takes it out. */
+  projectId?: string | null;
   due?: string | null;
   note?: string;
+}
+
+export interface NewProject {
+  companyId: string;
+  departmentId: string;
+  areaId?: string | null;
+  name: string;
+  goal?: string;
+  ownerId?: string | null;
+  ownerName?: string;
+  phase?: Phase | null;
+  repository?: string;
+  portalApp?: string;
+  liveUrl?: string;
+  order?: number;
+  /** Where it came from, kept in its first Trail entry, e.g. "Team board (g-…)". */
+  source?: string;
+}
+
+export type ProjectChanges = Partial<Pick<NewProject, "name" | "goal" | "ownerId" | "ownerName" | "phase" | "repository" | "portalApp" | "liveUrl" | "order">>;
+
+/** A Project with its Progress over the Tasks the asker can see. */
+export interface ProjectView {
+  project: Project;
+  progress: { done: number; total: number };
 }
 
 export interface Move {
@@ -92,6 +135,10 @@ export interface BoardView {
   nowCount: number;
   highShare: number;
   tooManyHigh: boolean;
+  /** The Projects the asker can see in this Company. */
+  projects: ProjectView[];
+  /** The Tasks the asker may change (ADR 0009). */
+  editable: string[];
 }
 
 export interface SummaryChange {
@@ -184,6 +231,7 @@ export class Board {
     // The Company team sees only the Areas that hold a Task shared with them; Area names can be sensitive too.
     const usedAreas = new Set(tasks.map((t) => t.areaId));
     const areas = allAreas.filter((a) => !a.retired && (isMember(me) || usedAreas.has(a.id)));
+    const people = await this.directory();
     return {
       company,
       areas: areas.sort((a, b) => a.name.localeCompare(b.name)),
@@ -192,6 +240,8 @@ export class Board {
       nowCount: tasks.filter((t) => t.status === "now").length,
       highShare,
       tooManyHigh: highShare > HIGH_SHARE_WARNING,
+      projects: this.projectViews(me, await this.store.listProjects({ companyId }), tasks),
+      editable: tasks.filter((t) => mayChange(me, t, people)).map((t) => t.id),
     };
   }
 
@@ -231,16 +281,31 @@ export class Board {
    * Team board ids to the Tasks that came from them, read from each Task's first Trail entry (ADR 0007).
    * Members only: the sync runs as a Member.
    */
-  async teamBoardLinks(who: Reader): Promise<Map<string, string>> {
+  async teamBoardLinks(who: Reader): Promise<{ tasks: Map<string, string>; projects: Map<string, string>; ownersFromSync: Set<string> }> {
     await this.requireMember(who, "sync with the team board");
-    const links = new Map<string, string>();
+    const tasks = new Map<string, string>();
+    const projects = new Map<string, string>();
+    // Tasks whose Owners only the sync ever set: before ADR 0009 it stood in as Owner for people it couldn't place.
+    const ownersFromSync = new Set<string>();
+    const ownersByPeople = new Set<string>();
     for (const company of await this.store.listCompanies()) {
       for (const e of await this.store.listTrail({ companyId: company.id })) {
-        const match = e.subject === "task" && e.action === "created" && e.taskId ? e.old?.match(TEAM_BOARD_SOURCE) : null;
-        if (match) links.set(match[1]!, e.taskId!);
+        const match = e.action === "created" ? e.old?.match(TEAM_BOARD_SOURCE) : null;
+        if (match && e.subject === "task" && e.taskId) tasks.set(match[1]!, e.taskId);
+        if (match && e.subject === "task" && e.taskId && e.via === "sync") ownersFromSync.add(e.taskId);
+        if (match && e.subject === "project") projects.set(match[1]!, e.subjectId);
+        if (e.subject === "task" && e.taskId && (e.field === "ownerIds" || e.field === "ownerNames") && e.via !== "sync") ownersByPeople.add(e.taskId);
       }
     }
-    return links;
+    for (const id of ownersByPeople) ownersFromSync.delete(id);
+    return { tasks, projects, ownersFromSync };
+  }
+
+  /** Every Project in a Company, removed ones too, with every Update. Members only: the sync reads it. */
+  async allProjects(who: Reader, companyId: string): Promise<{ projects: Project[]; updates: ProjectUpdate[] }> {
+    await this.requireMember(who, "read every Project");
+    const [projects, updates] = await Promise.all([this.store.listProjects({ companyId }), this.store.listProjectUpdates({ companyId })]);
+    return { projects, updates };
   }
 
   async removedTasks(who: Reader, companyId: string): Promise<Task[]> {
@@ -287,12 +352,16 @@ export class Board {
   async createTask(actor: Actor, input: NewTask): Promise<Task> {
     await this.requireMember(actor, "add Tasks");
     await this.company(actor, input.companyId);
-    const home = await this.home(input.companyId, input.departmentId, input.areaId ?? null);
+    const project = input.projectId ? await this.requireProjectIn(input.companyId, input.projectId) : null;
+    const home = project
+      ? { departmentId: project.departmentId, areaId: project.areaId }
+      : await this.home(input.companyId, input.departmentId, input.areaId ?? null);
     const shared = input.shared ?? false;
     if (shared && !canBeShared(home.departmentId)) throw cannotShare();
-    const { ownerIds, contributorIds } = await this.checkPeople(
+    const { ownerIds, ownerNames, contributorIds } = await this.checkOwners(
       { companyId: input.companyId, shared },
-      input.ownerIds,
+      input.ownerIds ?? [],
+      input.ownerNames ?? [],
       input.contributorIds ?? [],
     );
     if (!PRIORITIES.includes(input.priority)) throw new BoardError("invalid", "Choose High, Medium or Low.");
@@ -313,7 +382,10 @@ export class Board {
       status,
       priority: input.priority,
       ownerIds,
+      ownerNames,
       contributorIds,
+      companyOwner: cleanCompanyOwner(input.companyOwner),
+      projectId: project?.id ?? null,
       due: cleanDue(input.due),
       note,
       shared,
@@ -339,8 +411,9 @@ export class Board {
     const before = await this.requireEditable(actor, id);
     const after: Task = { ...before };
     const me = await this.person(actor);
-    if (!isMember(me) && (changes.priority !== undefined || changes.ownerIds !== undefined || changes.contributorIds !== undefined)) {
-      throw new BoardError("not_allowed", "Only Sunridge can change the Priority, Owners and Contributors.");
+    const peopleOrProject = [changes.ownerIds, changes.ownerNames, changes.contributorIds, changes.companyOwner, changes.projectId];
+    if (!isMember(me) && (changes.priority !== undefined || peopleOrProject.some((c) => c !== undefined))) {
+      throw new BoardError("not_allowed", "Only Sunridge can change the Priority, Owners, Contributors and Project.");
     }
 
     if (changes.title !== undefined) after.title = cleanTitle(changes.title);
@@ -348,11 +421,24 @@ export class Board {
       if (!PRIORITIES.includes(changes.priority)) throw new BoardError("invalid", "Choose High, Medium or Low.");
       after.priority = changes.priority;
     }
-    if (changes.ownerIds !== undefined || changes.contributorIds !== undefined) {
+    if (changes.ownerIds !== undefined || changes.ownerNames !== undefined || changes.contributorIds !== undefined) {
       Object.assign(
         after,
-        await this.checkPeople(after, changes.ownerIds ?? after.ownerIds, changes.contributorIds ?? after.contributorIds),
+        await this.checkOwners(
+          after,
+          changes.ownerIds ?? after.ownerIds,
+          changes.ownerNames ?? after.ownerNames,
+          changes.contributorIds ?? after.contributorIds,
+        ),
       );
+    }
+    if (changes.companyOwner !== undefined) after.companyOwner = cleanCompanyOwner(changes.companyOwner);
+    if (changes.projectId !== undefined && changes.projectId !== before.projectId) {
+      if (changes.projectId === null) after.projectId = null;
+      else {
+        const project = await this.requireProjectIn(before.companyId, changes.projectId);
+        Object.assign(after, { projectId: project.id, departmentId: project.departmentId, areaId: project.areaId });
+      }
     }
     if (changes.due !== undefined) after.due = cleanDue(changes.due);
     if (changes.note !== undefined) {
@@ -375,6 +461,7 @@ export class Board {
         after,
         await this.home(before.companyId, move.departmentId ?? before.departmentId, move.areaId ?? null),
       );
+      await this.keepProjectIfHomeFits(after);
     }
     if (move.status === "blocked" && before.status !== "blocked") {
       const waitingOn = cleanNote(move.waitingOn);
@@ -400,6 +487,7 @@ export class Board {
       companyId: to.companyId,
       ...(await this.home(to.companyId, to.departmentId, to.areaId ?? null)),
     };
+    await this.keepProjectIfHomeFits(after);
     if (after.status === "now" && to.companyId !== before.companyId) await this.checkNowCap(to.companyId, before.id);
     return this.save(actor, before, after);
   }
@@ -414,7 +502,7 @@ export class Board {
 
   /**
    * Share a Task with its Company team, or stop sharing it (ADR 0005). Stopping takes
-   * the Company team off its Owners and Contributors; every Task keeps a Member as Owner, so it is never left without one.
+   * the Company team off its Owners and Contributors.
    */
   async shareTask(actor: Actor, id: string, shared: boolean): Promise<Task> {
     await this.requireMember(actor, "share Tasks");
@@ -445,6 +533,13 @@ export class Board {
     const after: Task = { ...before, removed: false };
     if (after.status === "now" && (await this.nowCount(after.companyId, after.id)) >= NOW_CAP) after.status = "next";
     return this.save(actor, before, after);
+  }
+
+  /** Mark a Task Done with the evidence for it: the Document is added first, so Done always has its proof. */
+  async finishTask(actor: Actor, id: string, evidence: NewDocument): Promise<{ task: Task; document: Document }> {
+    const document = await this.addDocument(actor, id, evidence);
+    const task = await this.moveTask(actor, id, { status: "done" });
+    return { task, document };
   }
 
   // ---------- Documents ----------
@@ -567,6 +662,10 @@ export class Board {
       (t) => t.areaId === id && !t.removed,
     );
     if (!canBeShared(home.departmentId) && tasks.some((t) => t.shared)) throw cannotShare();
+    // Its Projects move with their Tasks, so a Task and its Project keep the same Home.
+    for (const project of (await this.store.listProjects({ companyId: area.companyId })).filter((p) => p.areaId === id)) {
+      await this.saveProject(actor, project, { ...project, ...home });
+    }
     for (const task of tasks) {
       // Done Tasks move too, so nothing points at a retired Area.
       await this.save(actor, task, { ...task, ...home });
@@ -581,15 +680,156 @@ export class Board {
   /** Called on every sign-in, from what the HBF Portal verified, so the list of people stays current. */
   async recordPerson(person: Person): Promise<void> {
     const existing = (await this.store.listPeople()).find((p) => p.id === person.id);
-    if (
-      !existing ||
-      existing.name !== person.name ||
-      existing.email !== person.email ||
-      existing.kind !== person.kind ||
-      existing.companyId !== person.companyId
-    ) {
-      await this.store.putPerson(person);
+    const signedInAt = existing?.signedInAt ?? person.signedInAt ?? this.clock().toISOString();
+    if (!existing || changedPerson(existing, person) || existing.signedInAt !== signedInAt) {
+      await this.store.putPerson({ ...person, signedInAt });
     }
+  }
+
+  /**
+   * Everyone the HBF Portal lets into the board, whether or not they have signed in yet, so they
+   * can be Owners from the start (ADR 0009). Never removes anyone, and never marks anyone signed in.
+   */
+  async recordDirectory(people: Person[]): Promise<number> {
+    const existing = new Map((await this.store.listPeople()).map((p) => [p.id, p]));
+    let written = 0;
+    for (const person of people) {
+      const before = existing.get(person.id);
+      if (before && !changedPerson(before, person)) continue;
+      await this.store.putPerson({ ...person, signedInAt: before?.signedInAt ?? null });
+      written++;
+    }
+    return written;
+  }
+
+  // ---------- Projects ----------
+
+  /** The Projects in a Company the asker can see. The Company team sees a Project only through its Shared Tasks. */
+  async projects(who: Reader, companyId: string): Promise<ProjectView[]> {
+    const me = await this.person(who);
+    await this.company(who, companyId);
+    const [projects, tasks] = await Promise.all([this.store.listProjects({ companyId }), this.store.listTasks({ companyId })]);
+    return this.projectViews(me, projects, tasks.filter((t) => !t.removed && canSee(me, t)));
+  }
+
+  async project(who: Reader, id: string): Promise<{ project: Project; progress: { done: number; total: number }; tasks: Task[]; updates: ProjectUpdate[]; trail: TrailEntry[] }> {
+    const me = await this.person(who);
+    const project = await this.store.getProject(id);
+    const notFound = new BoardError("not_found", "That Project isn't on the board.");
+    if (!project) throw notFound;
+    const tasks = (await this.store.listTasks({ companyId: project.companyId }))
+      .filter((t) => t.projectId === id && !t.removed && canSee(me, t))
+      .sort(compareTasks);
+    if (!isMember(me)) {
+      if (project.removed || !tasks.length) throw notFound;
+      return { project: redactProject(project), progress: progress(tasks), tasks, updates: [], trail: [] };
+    }
+    const [updates, trail] = await Promise.all([
+      this.store.listProjectUpdates({ projectId: id }),
+      this.store.listTrail({ companyId: project.companyId }),
+    ]);
+    return {
+      project,
+      progress: progress(tasks),
+      tasks,
+      updates: updates.sort((a, b) => a.at.localeCompare(b.at)),
+      trail: visibleTrail(trail.filter((e) => e.subject === "project" && e.subjectId === id)),
+    };
+  }
+
+  async createProject(actor: Actor, input: NewProject): Promise<Project> {
+    await this.requireMember(actor, "add Projects");
+    await this.company(actor, input.companyId);
+    const home = await this.home(input.companyId, input.departmentId, input.areaId ?? null);
+    const now = this.clock().toISOString();
+    const project: Project = {
+      id: this.newId(),
+      companyId: input.companyId,
+      ...home,
+      name: cleanName(input.name, "A Project", 80),
+      goal: cleanGoal(input.goal),
+      ...(await this.projectOwner(input.ownerId ?? null, input.ownerName ?? "")),
+      phase: checkPhase(input.phase ?? null),
+      repository: cleanRepository(input.repository),
+      portalApp: cleanPortalApp(input.portalApp),
+      liveUrl: input.liveUrl ? cleanUrl(input.liveUrl) : "",
+      order: input.order ?? 0,
+      removed: false,
+      createdAt: now,
+      createdBy: actor.memberId,
+      updatedAt: now,
+    };
+    await this.commit([this.projectEntry(actor, project, "created", null, input.source?.slice(0, 120) ?? null, project.name)], () =>
+      this.store.putProject(project),
+    );
+    return project;
+  }
+
+  async updateProject(actor: Actor, id: string, changes: ProjectChanges): Promise<Project> {
+    await this.requireMember(actor, "change Projects");
+    const before = await this.requireProject(id);
+    const after: Project = { ...before };
+    if (changes.name !== undefined) after.name = cleanName(changes.name, "A Project", 80);
+    if (changes.goal !== undefined) after.goal = cleanGoal(changes.goal);
+    if (changes.ownerId !== undefined || changes.ownerName !== undefined) {
+      Object.assign(after, await this.projectOwner(changes.ownerId ?? null, changes.ownerName ?? ""));
+    }
+    if (changes.phase !== undefined) after.phase = checkPhase(changes.phase);
+    if (changes.repository !== undefined) after.repository = cleanRepository(changes.repository);
+    if (changes.portalApp !== undefined) after.portalApp = cleanPortalApp(changes.portalApp);
+    if (changes.liveUrl !== undefined) after.liveUrl = changes.liveUrl ? cleanUrl(changes.liveUrl) : "";
+    if (changes.order !== undefined) after.order = changes.order;
+    return this.saveProject(actor, before, after);
+  }
+
+  /** Moves a Project to another Department or Area of its Company. Its Tasks move with it, each on its own Trail. */
+  async moveProject(actor: Actor, id: string, to: { departmentId: string; areaId?: string | null }): Promise<Project> {
+    await this.requireMember(actor, "move Projects");
+    const before = await this.requireProject(id);
+    const home = await this.home(before.companyId, to.departmentId, to.areaId ?? null);
+    const tasks = (await this.store.listTasks({ companyId: before.companyId })).filter((t) => t.projectId === id);
+    if (!canBeShared(home.departmentId) && tasks.some((t) => t.shared && !t.removed)) throw cannotShare();
+    const after = await this.saveProject(actor, before, { ...before, ...home });
+    for (const task of tasks) await this.save(actor, task, { ...task, ...home });
+    return after;
+  }
+
+  /** Takes a Project off the board. Its Tasks stay, and show no Project until it is restored. */
+  async removeProject(actor: Actor, id: string): Promise<Project> {
+    await this.requireMember(actor, "remove Projects");
+    const before = await this.requireProject(id);
+    return this.saveProject(actor, before, { ...before, removed: true });
+  }
+
+  async restoreProject(actor: Actor, id: string): Promise<Project> {
+    await this.requireMember(actor, "restore Projects");
+    const before = await this.requireProject(id);
+    return this.saveProject(actor, before, { ...before, removed: false });
+  }
+
+  /**
+   * Adds a line of news to a Project. Updates are never changed or deleted. The team board sync
+   * brings Updates written there with their own time and author.
+   */
+  async addProjectUpdate(actor: Actor, id: string, input: { text: string; at?: string; byName?: string }): Promise<ProjectUpdate> {
+    const me = await this.requireMember(actor, "add Project Updates");
+    const project = await this.requireProject(id);
+    const text = input.text.replace(/\r\n/g, "\n").trim();
+    if (!text) throw new BoardError("invalid", "An Update needs some text.");
+    if (text.length > UPDATE_MAX_CHARS) throw new BoardError("invalid", `Keep an Update to ${UPDATE_MAX_CHARS} characters or fewer.`);
+    const fromTeamBoard = actor.via === "sync" && input.byName !== undefined;
+    const update: ProjectUpdate = {
+      id: this.newId(),
+      projectId: project.id,
+      companyId: project.companyId,
+      at: actor.via === "sync" && input.at ? input.at : this.clock().toISOString(),
+      by: fromTeamBoard ? null : me.id,
+      byName: fromTeamBoard ? input.byName!.slice(0, 200) : me.name,
+      text,
+      via: actor.via,
+    };
+    await this.store.appendProjectUpdates([update]);
+    return update;
   }
 
   // ---------- internals ----------
@@ -615,6 +855,34 @@ export class Board {
       }
     }
     return after;
+  }
+
+  private async saveProject(actor: Actor, before: Project, after: Project): Promise<Project> {
+    const entries = PROJECT_FIELDS.filter((f) => show(before[f]) !== show(after[f])).map((f) =>
+      this.projectEntry(actor, after, f === "removed" ? (after.removed ? "removed" : "restored") : f === "departmentId" || f === "areaId" ? "moved" : "changed", f, show(before[f]), show(after[f])),
+    );
+    if (!entries.length) return before;
+    after.updatedAt = this.clock().toISOString();
+    await this.commit(entries, () => this.store.putProject(after));
+    return after;
+  }
+
+  private projectEntry(actor: Actor, project: Project, action: string, field: string | null, old: string | null, value: string | null): TrailEntry {
+    return {
+      id: this.newId(),
+      taskId: null,
+      companyId: project.companyId,
+      subject: "project",
+      subjectId: project.id,
+      memberId: actor.memberId,
+      action,
+      field,
+      old,
+      new: value,
+      via: actor.via,
+      at: this.clock().toISOString(),
+      outcome: "ok",
+    };
   }
 
   /** Trail first, then the change. If the change fails, the Trail says so (ADR 0003: no transactions). */
@@ -733,33 +1001,78 @@ export class Board {
   }
 
   /**
-   * Owners and Contributors: Members, or this Company's team on a Shared Task.
-   * At least one Owner is a Member, so Sunridge stays accountable for every Task.
+   * Owners and Contributors: Members, or this Company's team on a Shared Task. Owners may also be
+   * typed by name, for people who aren't on the board. A Task may have no Owner yet (ADR 0009).
    */
-  private async checkPeople(
+  private async checkOwners(
     task: { companyId: string; shared: boolean },
     ownerIds: string[],
+    ownerNames: string[],
     contributorIds: string[],
-  ): Promise<{ ownerIds: string[]; contributorIds: string[] }> {
-    const everyone = new Map((await this.store.listPeople()).map((p) => [p.id, p]));
+  ): Promise<{ ownerIds: string[]; ownerNames: string[]; contributorIds: string[] }> {
+    const people = await this.directory();
     const check = (ids: string[], role: string) => {
       const unique = [...new Set(ids)];
       for (const id of unique) {
-        const p = everyone.get(id);
-        if (!p) throw new BoardError("invalid", `Every ${role} must be someone on the board.`);
+        const p = people.get(id);
+        if (!p) throw new BoardError("invalid", `Every ${role} must be someone on the board, or typed by name.`);
         if (!isMember(p) && !(task.shared && p.companyId === task.companyId)) {
           throw new BoardError("invalid", `Someone from a company team can be an ${role} only on a Shared Task in their own company.`);
         }
       }
       return unique;
     };
-    const owners = check(ownerIds, "Owner");
-    if (!owners.length) throw new BoardError("invalid", "A Task needs at least one Owner.");
-    if (!owners.some((id) => isMember(everyone.get(id)!))) {
-      throw new BoardError("invalid", "A Task needs at least one Owner from Sunridge.");
-    }
+    const named = people.owners(ownerIds, ownerNames);
+    const owners = check(named.ownerIds, "Owner");
     const contributors = check(contributorIds, "Contributor").filter((id) => !owners.includes(id));
-    return { ownerIds: owners, contributorIds: contributors };
+    return { ownerIds: owners, ownerNames: named.ownerNames, contributorIds: contributors };
+  }
+
+  private async directory(): Promise<People> {
+    return new People(await this.store.listPeople());
+  }
+
+  private projectViews(me: Person, projects: Project[], visibleTasks: Task[]): ProjectView[] {
+    return projects
+      .filter((p) => !p.removed)
+      .map((project) => ({ project, tasks: visibleTasks.filter((t) => t.projectId === project.id) }))
+      .filter(({ tasks }) => isMember(me) || tasks.length > 0)
+      .map(({ project, tasks }) => ({ project: isMember(me) ? project : redactProject(project), progress: progress(tasks) }))
+      .sort((a, b) => a.project.order - b.project.order || a.project.name.localeCompare(b.project.name));
+  }
+
+  /** A Project's Owner: someone on the board, or a typed name. A typed name that is someone on the board becomes them. */
+  private async projectOwner(ownerId: string | null, ownerName: string): Promise<{ ownerId: string | null; ownerName: string }> {
+    const people = await this.directory();
+    const named = people.owners(ownerId ? [ownerId] : [], ownerName ? [ownerName] : []);
+    if (named.ownerIds.length + named.ownerNames.length > 1) throw new BoardError("invalid", "A Project has one Owner.");
+    const id = named.ownerIds[0] ?? null;
+    if (id && !isMember(people.get(id) ?? { kind: "company" })) throw new BoardError("invalid", "A Project's Owner is someone at Sunridge.");
+    return { ownerId: id, ownerName: named.ownerNames[0] ?? "" };
+  }
+
+  private async requireProject(id: string): Promise<Project> {
+    const project = await this.store.getProject(id);
+    if (!project) throw new BoardError("not_found", "That Project isn't on the board.");
+    return project;
+  }
+
+  private async requireProjectIn(companyId: string, id: string): Promise<Project> {
+    const project = await this.requireProject(id);
+    if (project.companyId !== companyId || project.removed) throw new BoardError("invalid", "That Project isn't in this company.");
+    return project;
+  }
+
+  /** After a Task changes Home, it stays in its Project only if the Project is still in the same Home. */
+  private async keepProjectIfHomeFits(task: Task): Promise<void> {
+    if (!task.projectId) return;
+    const project = await this.store.getProject(task.projectId);
+    const fits =
+      project &&
+      project.companyId === task.companyId &&
+      project.departmentId === task.departmentId &&
+      project.areaId === task.areaId;
+    if (!fits) task.projectId = null;
   }
 
   private async nowCount(companyId: string, excludeTaskId: string | null): Promise<number> {
@@ -801,8 +1114,9 @@ export class Board {
     const task = await this.requireVisible(actor, id);
     // The team board sync copies changes people made on the team board. It acts as a Member, and any
     // Member may join any Task to change it, so the sync needn't join first (ADR 0007).
-    if (actor.via === "sync" && isMember(await this.person(actor))) return task;
-    if (!canEdit(task, actor.memberId)) {
+    const me = await this.person(actor);
+    if (actor.via === "sync" && isMember(me)) return task;
+    if (!mayChange(me, task, await this.directory())) {
       throw new BoardError("not_allowed", "Only this Task's Owners and Contributors can change it. Join it first.");
     }
     return task;
@@ -830,12 +1144,80 @@ function checkDocumentStatus(status: DocumentStatus): DocumentStatus {
   return status;
 }
 
-export function canEdit(task: Task, memberId: string): boolean {
-  return task.ownerIds.includes(memberId) || task.contributorIds.includes(memberId);
+/**
+ * Who may change a Task (ADR 0009): its Owners and Contributors, and any Member when none of its
+ * Owners has signed in to the board yet, so work owned by a colleague without access, by a typed
+ * name or by nobody can still be kept up to date. The Company team rules stay as they are (ADR 0005).
+ */
+export function mayChange(person: Person, task: Task, people: People): boolean {
+  if (task.ownerIds.includes(person.id) || task.contributorIds.includes(person.id)) return true;
+  return isMember(person) && !task.ownerIds.some((id) => people.hasSignedIn(id));
 }
 
-type Field = "title" | "status" | "priority" | "ownerIds" | "contributorIds" | "due" | "note" | "companyId" | "departmentId" | "areaId" | "shared" | "removed";
-const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "contributorIds", "due", "note", "companyId", "departmentId", "areaId", "shared", "removed"];
+function changedPerson(a: Person, b: Person): boolean {
+  return a.name !== b.name || a.email !== b.email || a.kind !== b.kind || a.companyId !== b.companyId;
+}
+
+const COMPANY_OWNER_MAX_CHARS = 120;
+const GOAL_MAX_CHARS = 300;
+
+function cleanCompanyOwner(value: string | undefined): string {
+  const clean = (value ?? "").trim().replace(/\s+/g, " ");
+  if (clean.length > COMPANY_OWNER_MAX_CHARS) throw new BoardError("invalid", `Keep the company owner to ${COMPANY_OWNER_MAX_CHARS} characters or fewer.`);
+  return clean;
+}
+
+function cleanGoal(value: string | undefined): string {
+  const clean = (value ?? "").replace(/\r\n/g, "\n").trim();
+  if (clean.length > GOAL_MAX_CHARS) throw new BoardError("invalid", `Keep the goal to ${GOAL_MAX_CHARS} characters or fewer.`);
+  return clean;
+}
+
+/** A repository as owner/name, or its https address. */
+function cleanRepository(value: string | undefined): string {
+  const clean = (value ?? "").trim();
+  if (!clean) return "";
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(clean)) return clean;
+  return cleanUrl(clean);
+}
+
+/** The app's slug in the HBF Portal, such as "site-flow". */
+function cleanPortalApp(value: string | undefined): string {
+  const clean = (value ?? "").trim().toLowerCase();
+  if (clean && !/^[a-z0-9-]{1,64}$/.test(clean)) throw new BoardError("invalid", "A Portal app is its short name, such as site-flow.");
+  return clean;
+}
+
+function checkPhase(phase: Phase | null): Phase | null {
+  if (phase !== null && !PHASES.includes(phase)) throw new BoardError("invalid", "Choose Idea, Building, Live or Paused.");
+  return phase;
+}
+
+/** What the Company team may see of a Project: its name and Home, not its goal, Owner or app details. */
+function redactProject(project: Project): Project {
+  return { ...project, goal: "", ownerId: null, ownerName: "", phase: null, repository: "", portalApp: "", liveUrl: "" };
+}
+
+type Field =
+  | "title"
+  | "status"
+  | "priority"
+  | "ownerIds"
+  | "ownerNames"
+  | "contributorIds"
+  | "companyOwner"
+  | "projectId"
+  | "due"
+  | "note"
+  | "companyId"
+  | "departmentId"
+  | "areaId"
+  | "shared"
+  | "removed";
+const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "ownerNames", "contributorIds", "companyOwner", "projectId", "due", "note", "companyId", "departmentId", "areaId", "shared", "removed"];
+
+type ProjectField = "name" | "goal" | "ownerId" | "ownerName" | "phase" | "repository" | "portalApp" | "liveUrl" | "order" | "departmentId" | "areaId" | "removed";
+const PROJECT_FIELDS: ProjectField[] = ["name", "goal", "ownerId", "ownerName", "phase", "repository", "portalApp", "liveUrl", "order", "departmentId", "areaId", "removed"];
 
 function show(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -850,7 +1232,7 @@ function taskDiff(before: Task, after: Task): [Field, string | null, string | nu
 function actionFor(field: Field, before: Task, after: Task): string {
   if (field === "removed") return after.removed ? "removed" : "restored";
   if (field === "shared") return after.shared ? "shared" : "unshared";
-  if (field === "status" || field === "companyId" || field === "departmentId" || field === "areaId") return "moved";
+  if (field === "status" || field === "companyId" || field === "departmentId" || field === "areaId" || field === "projectId") return "moved";
   if (field === "contributorIds" && after.contributorIds.length > before.contributorIds.length) return "joined";
   return "changed";
 }

@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import { canEdit } from "@/board/board";
 import { BoardError } from "@/board/rules";
 import { board } from "@/server/context";
 import { requirePerson } from "@/server/session";
@@ -35,10 +34,10 @@ export default async function CompanyBoard({
       panel = {
         mode: "edit",
         ...detail,
-        canEdit: canEdit(detail.task, me.id),
+        canEdit: view.editable.includes(detail.task.id),
         allAreas: allAreas.flat(),
         // Tasks this Person can move a Document to.
-        moveTargets: view.tasks.filter((t) => t.id !== detail.task.id && canEdit(t, me.id)).map((t) => ({ id: t.id, title: t.title })),
+        moveTargets: view.tasks.filter((t) => t.id !== detail.task.id && view.editable.includes(t.id)).map((t) => ({ id: t.id, title: t.title })),
       };
     }
   }
@@ -60,6 +59,7 @@ export default async function CompanyBoard({
           company={view.company}
           companies={companies}
           areas={view.areas}
+          projects={view.projects.map((p) => p.project)}
           members={members}
           meId={me.id}
           isCompanyTeam={isCompanyTeam}

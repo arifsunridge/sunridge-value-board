@@ -14,7 +14,7 @@ Easiest, once the Render service exists (section 3): add a temporary variable `D
 DB_APP_PASSWORD="$DB_PASSWORD" DB_USER=root DB_PASSWORD="$DB_ADMIN_PASSWORD" npm run db:init
 ```
 
-It creates the `value_board` database and tables and the board's own login `value_board` with the password already in the service's `DB_PASSWORD` (at least 24 characters). Then delete `DB_ADMIN_PASSWORD` from the service and redeploy. Running it again is safe.
+It creates the `value_board` database and tables (and adds the columns later releases need, so run it again after deploying a release that says so, such as ADR 0008 and 0009) and the board's own login `value_board` with the password already in the service's `DB_PASSWORD` (at least 24 characters). Then delete `DB_ADMIN_PASSWORD` from the service and redeploy. Running it again is safe.
 
 The board's login can add to the Trail but never change or delete it. That is what keeps the Trail append-only (ADR 0006). Without `DB_APP_PASSWORD`, `db:init` prints the `CREATE USER` and `GRANT` statements instead.
 
@@ -24,7 +24,8 @@ The portal change that goes with this board (`hbf-portal`, branch `claude/vibran
 
 1. **App settings → Value Board:** tick both the `sunridge` and `hbf` audiences, set the roles to `Sunridge team, HBF team`, and set the address to `https://hbf-value-board.sunridge.app`. The portal only adds an app's row when it is missing, so this edit is needed once.
 2. **People & access:** give each Sunridge person the Value Board as **Sunridge team**. Existing Value Board grants have no role and stop working until they are given one.
-3. When Sunridge is ready, give the HBF people who should see it (for example HBF's CEO) the Value Board as **HBF team**. They see nothing until a Member shares Tasks with them.
+3. The board lists everyone granted the Value Board as a possible Owner (`GET /api/internal/people`, portal-kit 0.2.0), so grant each Sunridge person even if they won't sign in soon. Deploy the portal before the board.
+4. When Sunridge is ready, give the HBF people who should see it (for example HBF's CEO) the Value Board as **HBF team**. They see nothing until a Member shares Tasks with them.
 
 ## 3. Render and Cloudflare (Arif)
 
@@ -48,7 +49,7 @@ The team keeps using the "Sunridge team board" Claude artifact, and the two boar
 3. Claude environment for the routine: allow `sunridge-value-board.onrender.com` under Network access, and add `SYNC_TOKEN` as an environment variable (or a network secret for that host).
 4. The routine, hourly: read the four collections with ArtifactData into a folder, run `NODE_USE_ENV_PROXY=1 node scripts/team-board-sync.mjs <folder> <out>`, then apply each batch in `<out>/batches.json` with ArtifactData `batch`.
 
-Everyone named as an Owner should sign in to the board once, so the board knows them. Until then their Tasks are owned by the syncing Member.
+The board learns who can be an Owner from the HBF Portal (ADR 0009), so colleagues needn't sign in first. A team board Owner the board can't place stays on the team board only. Add a person's `u_…` id to `people` once they have opened the artifact, so their Tasks match by person rather than by name.
 
 The older one-time import (`npm run import -- prepare-team-board`, then **Import** on the board) still works for a fresh start.
 
@@ -64,6 +65,12 @@ Lets Members read and change the board from Claude chat or Claude Code, as thems
 2. The board's app registration exposes `https://hbf-value-board.sunridge.app/mcp` as its Application ID URI, with the `Board.ReadWrite` scope, and a client app for Claude is registered (ADR 0004). Set `ENTRA_TENANT_ID` and `ENTRA_CLIENT_ID`.
 
 Claude identifies a Member by the email in their Entra token, which matches their portal sign-in.
+
+`scripts/claude-connector-wizard.sh` walks through all of it (Entra, Cloudflare, Render, then adding the connector in Claude) and checks the endpoint answers. Run it from the repository root: `./scripts/claude-connector-wizard.sh`.
+
+## 7. Updating the board from a Claude chat
+
+`skills/board-update/SKILL.md` lets any Member say "I finished X" in a Claude chat, attach the file, and have Claude propose the change on the team board, then write it once they agree: Done with the file as a Document, a Project Update, Owners by name. An organisation owner uploads the `skills/board-update` folder (zipped) in Claude under Organization settings → Skills, so every Member's chats have it. Until the team moves off the team board, the skill writes there and the hourly sync carries the change to this board.
 
 **Trying it locally.** With `AUTH_MODE=dev` and `CLAUDE_ACCESS_ENABLED=true` in `.env`:
 

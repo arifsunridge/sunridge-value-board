@@ -16,8 +16,11 @@ const snapshotSchema = z.object({
         projectId: z.string(),
         priority: z.string().optional(),
         categoryId: z.string().nullable().optional(),
+        groupId: z.string().nullable().optional(),
         due: z.string().nullable().optional(),
         ownerIds: z.array(z.string()).optional(),
+        ownerNames: z.array(z.string()).optional(),
+        hbfOwner: z.string().optional(),
         note: z.string().optional(),
         waitingOn: z.string().optional(),
         removed: z.boolean().optional(),
@@ -27,6 +30,27 @@ const snapshotSchema = z.object({
       .loose(),
   ),
   categories: record(z.object({ name: z.string(), parentId: z.string().nullable(), projectId: z.string().nullable() }).loose()),
+  groups: record(
+    z
+      .object({
+        name: z.string(),
+        note: z.string().optional(),
+        projectId: z.string(),
+        categoryId: z.string(),
+        order: z.number().optional(),
+        ownerId: z.string().optional(),
+        ownerName: z.string().optional(),
+        phase: z.string().optional(),
+        repository: z.string().optional(),
+        portalApp: z.string().optional(),
+        liveUrl: z.string().optional(),
+        log: z.array(z.object({ at: z.string(), by: z.string().optional(), byName: z.string().optional(), text: z.string() }).loose()).optional(),
+        removed: z.boolean().optional(),
+        createdAt: z.string().optional(),
+        editedAt: z.string().optional(),
+      })
+      .loose(),
+  ).optional(),
   documents: record(
     z
       .object({ taskId: z.string().nullable().optional(), kind: z.string(), status: z.string(), title: z.string(), url: z.string(), removed: z.boolean().optional() })
@@ -81,6 +105,6 @@ export async function handleSync(request: Request, options: SyncEndpointOptions)
   const actor = { memberId: me.id, via: "sync" as const };
   const side = await readBoardSide(options.board, actor);
   const plan = planSync(snapshot, side, options.now().toISOString());
-  const result = await applyBoardChanges(options.board, actor, plan, side);
+  const result = await applyBoardChanges(options.board, actor, plan, side, snapshot.config);
   return json({ artifactWrites: plan.artifact, board: result, skipped: plan.skipped });
 }

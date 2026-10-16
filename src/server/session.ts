@@ -7,6 +7,7 @@ import { redirect } from "next/navigation";
 import type { Person } from "@/board/model";
 import { config } from "./config";
 import { board, portal } from "./context";
+import { refreshPeople } from "./people-directory";
 import { personFromPortal, type Refusal } from "./portal-person";
 
 /** Local work only (AUTH_MODE=dev): who you chose to be. */
@@ -49,6 +50,7 @@ async function fromPortal(): Promise<Person | Refusal> {
   const person = personFromPortal(identity, await portal().getAccess(identity.email), config().PORTAL_COMPANY_ID);
   if (typeof person === "string") return person;
   await board().recordPerson(person);
+  await refreshPeople();
   return person;
 }
 

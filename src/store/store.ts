@@ -1,4 +1,4 @@
-import type { Area, Company, Document, Person, Task, TrailEntry } from "@/board/model";
+import type { Area, Company, Document, Person, Project, ProjectUpdate, Task, TrailEntry } from "@/board/model";
 
 /**
  * Where board data lives. Two adapters: in-memory (tests, local work) and
@@ -19,6 +19,15 @@ export interface Store {
   listTasks(filter: { companyId?: string }): Promise<Task[]>;
   getTask(id: string): Promise<Task | null>;
   putTask(task: Task): Promise<void>;
+
+  /** Projects for one Company, or across all Companies when companyId is omitted. Removed ones too. */
+  listProjects(filter: { companyId?: string }): Promise<Project[]>;
+  getProject(id: string): Promise<Project | null>;
+  putProject(project: Project): Promise<void>;
+
+  /** Append-only, like the Trail: there is no update or delete. */
+  appendProjectUpdates(updates: ProjectUpdate[]): Promise<void>;
+  listProjectUpdates(filter: { projectId?: string; companyId?: string }): Promise<ProjectUpdate[]>;
 
   listDocuments(filter: { taskIds: string[] }): Promise<Document[]>;
   getDocument(id: string): Promise<Document | null>;

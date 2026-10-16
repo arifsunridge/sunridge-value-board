@@ -9,6 +9,7 @@ import {
   DOCUMENT_STATUSES,
   DOCUMENT_STATUS_LABELS,
   NOTE_MAX_CHARS,
+  OWNER_NAMES_MAX,
   PRIORITIES,
   PRIORITY_LABELS,
   PRIORITY_RULE,
@@ -23,6 +24,7 @@ import {
   type DocumentStatus,
   type Person,
   type Priority,
+  type Project,
   type Status,
   type Task,
   type TrailEntry,
@@ -47,6 +49,8 @@ interface Props {
   company: Company;
   companies: Company[];
   areas: Area[];
+  /** The Projects in this Company the asker can see. */
+  projects: Project[];
   members: Person[];
   meId: string;
   /** Members keep everything; the Company team changes only a few fields of their own Shared Tasks (ADR 0005). */
@@ -226,6 +230,52 @@ function PeopleField({
   );
 }
 
+/** Owners who aren't on the board, typed by name and separated by commas (ADR 0009). */
+function OwnerNamesField({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  return (
+    <div className="field">
+      <label htmlFor="ownerNames">Other Owners, by name</label>
+      <input id="ownerNames" type="text" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      <div className="hint">For people who aren&apos;t on the board yet. Separate names with commas; up to {OWNER_NAMES_MAX}.</div>
+    </div>
+  );
+}
+
+const splitNames = (value: string) =>
+  value
+    .split(",")
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+function CompanyOwnerField({ company, value, onChange, disabled }: { company: Company; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  if (company.kind !== "portfolio") return null;
+  return (
+    <div className="field">
+      <label htmlFor="companyOwner">{company.name} owner</label>
+      <input id="companyOwner" type="text" maxLength={120} value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} />
+      <div className="hint">Who answers for this at {company.name}, by name. It gives them no access to the board.</div>
+    </div>
+  );
+}
+
+function ProjectField({ projects, value, onChange, disabled }: { projects: Project[]; value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  if (!projects.length) return null;
+  return (
+    <div className="field">
+      <label htmlFor="project">Project</label>
+      <select id="project" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}>
+        <option value="">None</option>
+        {projects.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <div className="hint">A Task in a Project lives where the Project lives.</div>
+    </div>
+  );
+}
+
 function NoteField({ value, onChange, label = "Note", disabled }: { value: string; onChange: (v: string) => void; label?: string; disabled?: boolean }) {
   return (
     <div className="field">
@@ -246,11 +296,14 @@ function ErrorBanner({ message }: { message: string | null }) {
 
 // ---------- new ----------
 
-function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone: (id: string) => void }) {
+function NewTaskForm({ company, areas, projects, members, meId, onDone }: Props & { onDone: (id: string) => void }) {
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<Priority>("medium");
   const [home, setHome] = useState(`dept:${DEPARTMENTS[0].id}`);
   const [owners, setOwners] = useState([meId]);
+  const [ownerNames, setOwnerNames] = useState("");
+  const [companyOwner, setCompanyOwner] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [contributors, setContributors] = useState<string[]>([]);
   const [due, setDue] = useState("");
   const [note, setNote] = useState("");
@@ -273,6 +326,9 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
               title,
               priority,
               ownerIds: keep(owners),
+              ownerNames: splitNames(ownerNames),
+              companyOwner,
+              projectId: projectId || null,
               contributorIds: keep(contributors),
               due: due || null,
               note,
@@ -289,8 +345,11 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
         <label htmlFor="home">Where it lives</label>
         <HomeSelect id="home" areas={areas} value={home} onChange={setHome} />
       </div>
+      <ProjectField projects={projects} value={projectId} onChange={setProjectId} />
       <SharedField company={company} departmentId={departmentId} value={shared} onChange={setShared} />
       <PeopleField label="Owners" members={people} value={keep(owners)} onChange={setOwners} />
+      <OwnerNamesField value={ownerNames} onChange={setOwnerNames} />
+      <CompanyOwnerField company={company} value={companyOwner} onChange={setCompanyOwner} />
       <details>
         <summary>Contributors, due date and note</summary>
         <PeopleField label="Contributors" members={people} value={keep(contributors)} onChange={setContributors} exclude={owners} />
@@ -310,11 +369,14 @@ function NewTaskForm({ company, areas, members, meId, onDone }: Props & { onDone
 // ---------- edit ----------
 
 function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> }) {
-  const { data, members, areas, companies, company, isCompanyTeam } = props;
+  const { data, members, areas, companies, company, isCompanyTeam, projects } = props;
   const { task } = data;
   const [title, setTitle] = useState(task.title);
   const [priority, setPriority] = useState(task.priority);
   const [owners, setOwners] = useState(task.ownerIds);
+  const [ownerNames, setOwnerNames] = useState(task.ownerNames.join(", "));
+  const [companyOwner, setCompanyOwner] = useState(task.companyOwner);
+  const [projectId, setProjectId] = useState(task.projectId ?? "");
   const [contributors, setContributors] = useState(task.contributorIds);
   const [due, setDue] = useState(task.due ?? "");
   const [note, setNote] = useState(task.note);
@@ -329,12 +391,19 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
   // The Company team may change the title, due date, note and Status of their own Tasks; the rest stays with Sunridge.
   const sunridgeOnly = disabled || isCompanyTeam;
   const people = eligible(members, task.companyId, task.shared);
-  const names = Object.fromEntries([...companies.map((c) => [c.id, c.name]), ...data.allAreas.map((a) => [a.id, a.name])]);
+  const names = Object.fromEntries([
+    ...companies.map((c) => [c.id, c.name]),
+    ...data.allAreas.map((a) => [a.id, a.name]),
+    ...projects.map((p) => [p.id, p.name]),
+  ]);
 
   const changes = {
     ...(title !== task.title && { title }),
     ...(priority !== task.priority && { priority }),
     ...(owners.join() !== task.ownerIds.join() && { ownerIds: owners }),
+    ...(splitNames(ownerNames).join() !== task.ownerNames.join() && { ownerNames: splitNames(ownerNames) }),
+    ...(companyOwner.trim() !== task.companyOwner && { companyOwner }),
+    ...((projectId || null) !== task.projectId && { projectId: projectId || null }),
     ...(contributors.join() !== task.contributorIds.join() && { contributorIds: contributors }),
     ...((due || null) !== task.due && { due: due || null }),
     ...(note !== task.note && { note }),
@@ -348,7 +417,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
     <>
       {disabled && (
         <div className="banner">
-          You’re viewing this Task. Only its Owners and Contributors can change it.
+          You’re viewing this Task. Only its Owners and Contributors can change it, or any Sunridge Member while none of its Owners has signed in.
           {!isCompanyTeam && (
             <div style={{ marginTop: 8 }}>
               <button className="button secondary" disabled={join.pending} onClick={() => join.run(() => actions.joinTask(task.id))}>
@@ -391,6 +460,9 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
         <TitleField value={title} onChange={setTitle} disabled={disabled} />
         <PriorityField value={priority} onChange={setPriority} disabled={sunridgeOnly} />
         <PeopleField label="Owners" members={people} value={owners} onChange={setOwners} disabled={sunridgeOnly} />
+        <OwnerNamesField value={ownerNames} onChange={setOwnerNames} disabled={sunridgeOnly} />
+        <CompanyOwnerField company={company} value={companyOwner} onChange={setCompanyOwner} disabled={sunridgeOnly} />
+        <ProjectField projects={projects} value={projectId} onChange={setProjectId} disabled={sunridgeOnly} />
         <div className="field">
           <label htmlFor="due">Due</label>
           <input id="due" type="date" value={due} onChange={(e) => setDue(e.target.value)} disabled={disabled} />

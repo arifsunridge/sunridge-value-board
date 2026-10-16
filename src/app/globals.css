@@ -722,6 +722,96 @@ fieldset {
   font-weight: 600;
   letter-spacing: 0.3px;
 }
+/* An Owner typed by name, not on the board; and the company owner (ADR 0009). */
+.av.named {
+  background: var(--white);
+  color: var(--olive);
+  border: 1px solid var(--olive);
+}
+.av.company {
+  background: var(--sage-light);
+  color: var(--olive-dark);
+  border: 1px solid var(--sage);
+}
+.card .need {
+  color: var(--gold-ink);
+  font-weight: 600;
+}
+/* The Project a Task is part of (ADR 0008). */
+.ptag {
+  display: block;
+  font-size: 10.5px;
+  line-height: 14px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--gold-ink);
+  font-weight: 600;
+}
+.pbar {
+  display: block;
+  height: 3px;
+  background: var(--line);
+  margin: 6px 0 4px;
+  max-width: 220px;
+}
+.pbar i {
+  display: block;
+  height: 100%;
+  background: var(--olive);
+}
+.projects {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.projects li {
+  border-bottom: var(--rule);
+  padding: 10px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 110px;
+  gap: 12px;
+  align-items: baseline;
+}
+.projects li .goal {
+  display: block;
+  color: var(--grey);
+  font-size: 13px;
+}
+.phase {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border: 1px solid var(--rule-colour);
+  color: var(--olive-dark);
+  white-space: nowrap;
+}
+.phase.live {
+  border-color: var(--olive);
+  color: var(--olive);
+}
+.phase.building {
+  border-color: var(--gold);
+  color: var(--gold-ink);
+}
+.updates {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.updates li {
+  padding: 6px 0 6px 10px;
+  border-left: 2px solid var(--line);
+  font-size: 14px;
+}
+.updates li span {
+  color: var(--grey);
+  font-size: 12px;
+}
+@media (max-width: 560px) {
+  .projects li {
+    grid-template-columns: 1fr;
+  }
+}
 .clip {
   vertical-align: -2px;
 }

@@ -84,13 +84,20 @@ describe("Claude endpoint: tools", () => {
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
         "add_document_link",
+        "add_project_update",
         "company_summary",
+        "create_project",
         "create_task",
+        "get_project",
         "get_task",
         "join_task",
         "list_companies",
         "list_members",
+        "list_projects",
         "list_tasks",
+        "mark_done_with_evidence",
+        "set_task_owners",
+        "update_project",
         "move_task",
         "my_tasks",
         "remove_task",
@@ -153,7 +160,40 @@ describe("Claude endpoint: tools", () => {
       name: "create_task",
       arguments: { company: "HBF", department: "Finance", title: "Draft the lender update", priority: "low", owners: ["plant manager"] },
     });
-    expect(text(notMember)).toContain("isn't a Sunridge Member");
+    expect(text(notMember)).toContain(`"plant manager" isn't on the board`);
+  });
+
+  it("keeps Projects, typed Owners and finished work with its evidence", async () => {
+    const client = await connect();
+    const project = json(
+      await client.callTool({
+        name: "create_project",
+        arguments: { company: "HBF", department: "Innovation & efficiency", area: "Systems & tools", name: "Example app", owner: "me", phase: "building", repository: "example-org/example-app" },
+      }),
+    );
+    expect(project).toMatchObject({ name: "Example app", owner: "Theran Example", phase: "Building", area: "Systems & tools" });
+
+    const task = json(
+      await client.callTool({
+        name: "create_task",
+        arguments: { company: "HBF", department: "Operations", project: "Example app", title: "Ship the example app", priority: "medium", owner_names: ["Example Colleague"] },
+      }),
+    );
+    expect(task).toMatchObject({ project: "Example app", area: "Systems & tools", owners: ["Example Colleague"], you_can_change_it: true });
+
+    const done = json(
+      await client.callTool({
+        name: "mark_done_with_evidence",
+        arguments: { task_id: task.id, evidence_name: "Release notes", evidence_url: "https://example.com/notes", project_update: "First version is live." },
+      }),
+    );
+    expect(done).toMatchObject({ task: { status: "Done" }, document: { name: "Release notes", status: "Final" }, project_update: "First version is live." });
+
+    const detail = json(await client.callTool({ name: "get_project", arguments: { project: "Example app" } }));
+    expect(detail).toMatchObject({ progress: "1 of 1 Tasks done", updates: [expect.objectContaining({ by: "Theran Example", text: "First version is live." })] });
+
+    const owners = json(await client.callTool({ name: "set_task_owners", arguments: { task_id: task.id, owners: [] } }));
+    expect(owners).toMatchObject({ owners: [], needs_an_owner: true });
   });
 
   it("refuses one more Task in Now than the cap", async () => {

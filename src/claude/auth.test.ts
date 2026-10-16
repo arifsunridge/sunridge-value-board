@@ -30,6 +30,7 @@ describe("Claude access tokens", () => {
       email: "theran@example.com",
       kind: "member",
       companyId: null,
+      signedInAt: null,
     });
     // Tokens whose audience is the endpoint address are accepted too.
     await expect(memberFromToken(await sign({}, { audience: resource }), { tenantId, clientId, resource, keys })).resolves.toBeTruthy();

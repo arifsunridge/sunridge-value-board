@@ -1,5 +1,6 @@
 ---
 status: accepted
+amended_by: 0008, 0009
 ---
 
 # The board and the team board artifact stay in sync both ways, through a scheduled Claude routine
@@ -14,7 +15,8 @@ Only a Claude session acting as Arif can read and write the artifact's database.
 - Both sides are compared in the board's terms, after a round trip, so something only one side can hold never counts as a change. Examples are a ninth word in a title, a third line in a note, or an Owner the artifact doesn't know.
 - Where they differ, the side changed more recently wins, for the whole Task: the artifact's `editedAt` against the board's `updatedAt`. If the same Task changes on both sides within an hour, the later change wins and the earlier one is lost.
 - Synced: title, Status (with Waiting on), Priority, Owners, due date, note, Department and Area, removed. Documents come across once, when a Task is first added to the board. Contributors and Shared stay board-only. A Task can't change Company through the sync.
-- A team board Task with no Owner the board knows is owned by the syncing Member. A Task over the Now cap comes in as Next.
+- A team board Task with no Owner the board knows comes in with the Owners it can place, or none (ADR 0009; it used to be owned by the syncing Member). A Task over the Now cap comes in as Next.
+- Projects (the artifact's `groups`), a Task's Project, Owners typed by name and the company owner (`hbfOwner`) are synced too (ADR 0008, 0009).
 
 ## Considered options
 

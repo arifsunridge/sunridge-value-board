@@ -61,5 +61,5 @@ export async function memberFromToken(token: string, check: TokenCheck): Promise
   const name = typeof payload.name === "string" ? payload.name : email || "Member";
   // A Person's id is their lower-cased email, as the HBF Portal verifies it (ADR 0006).
   if (!email) throw new AccessDenied("The access token carries no email address.", "invalid");
-  return { id: email.toLowerCase(), name, email, kind: "member", companyId: null };
+  return { id: email.toLowerCase(), name, email, kind: "member", companyId: null, signedInAt: null };
 }
