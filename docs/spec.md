@@ -104,7 +104,7 @@ Each goal is measured from the Trail, so none needs manual tracking.
 - [ ] Suggestions follow the Glossary rules: Owners are People or typed names, with no names in titles. Suggestions for HBF content use US English.
 - [ ] The pasted notes are not stored. Each confirmed Task's Trail records "from notes of [date], confirmed by [Member]".
 
-**P0.11 Views.** "My Tasks" (Owner or Contributor, across Companies). Filters: High, Blocked, Overdue, Needs an owner, No date. Projects: each with its goal, Owner, Phase, Progress and Updates.
+**P0.11 Views.** "My Tasks" (Owner or Contributor, across Companies). Filters: High, Blocked, Overdue, Needs an owner, No date, Private (Members only, ADR 0010). Projects: each with its goal, Owner, Phase, Progress and Updates.
 - [ ] A **Summary** view per Company for Partners: High and Blocked first, overdue flagged, a list of what changed in the last 7 days, and everything else collapsed.
 
 **P0.12 Areas.** Any Member can add, rename or retire an Area for a Company. Retiring an Area that still has open Tasks asks where to move them.
