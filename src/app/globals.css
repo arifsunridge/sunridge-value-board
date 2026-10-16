@@ -992,6 +992,20 @@ section {
   font-size: 11px;
   line-height: 16px;
 }
+.private-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--gold);
+  color: var(--gold-ink);
+  padding: 0 4px;
+  font-size: 11px;
+  line-height: 16px;
+  vertical-align: 1px;
+}
+.list .private-mark {
+  margin-left: 6px;
+}
 
 label.check {
   display: flex;

@@ -135,6 +135,11 @@ export interface BoardSide {
    * whichever side changed last, and the board's empty value never goes back.
    */
   setOnBoard?: Set<string>;
+  /**
+   * Private Tasks (ADR 0010), which are left out of `tasks`. One the team board already has is taken
+   * off it, and nothing about it comes back to the board.
+   */
+  privateTasks?: Set<string>;
   /** The people the board knows. Only they can be Owners by id; anyone else is a typed name. */
   people: Person[];
 }
@@ -556,6 +561,11 @@ export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: stri
     const taskId = side.links.tasks.get(id) ?? boardIdFromArtifactId(id);
     const task = taskId ? tasksById.get(taskId) : undefined;
     if (taskId) linkedTaskIds.add(taskId);
+    if (taskId && side.privateTasks?.has(taskId)) {
+      // Made Private after it reached the team board: take it off there, and change nothing on the board.
+      if (!action.removed) plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data: { removed: true, ...edited } });
+      continue;
+    }
     const shape = fromTeamBoard(action, snapshot, side);
     if (typeof shape === "string") {
       plan.skipped.push({ side: "board", id, reason: shape });

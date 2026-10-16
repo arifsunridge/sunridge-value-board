@@ -13,6 +13,7 @@ import {
   canSee,
   isDepartmentId,
   isMember,
+  isOnTask,
   isOpen,
   progress,
   type Area,
@@ -67,6 +68,8 @@ export interface NewTask {
   note?: string | null;
   /** Visible to the Company team. Off unless set. */
   shared?: boolean;
+  /** Seen only by its Owners and Contributors (ADR 0010). Off unless set; whoever adds it must be on it. */
+  private?: boolean;
   /** Where a Task came from, kept in its first Trail entry, e.g. "Meeting notes, 2 Oct". */
   source?: string;
   /** Documents to add with the Task, on its Trail (used by the import). */
@@ -237,7 +240,7 @@ export class Board {
       areas: areas.sort((a, b) => a.name.localeCompare(b.name)),
       tasks,
       documentCounts,
-      nowCount: tasks.filter((t) => t.status === "now").length,
+      nowCount: tasks.filter(countsForNow).length,
       highShare,
       tooManyHigh: highShare > HIGH_SHARE_WARNING,
       projects: this.projectViews(me, await this.store.listProjects({ companyId }), tasks),
@@ -278,12 +281,13 @@ export class Board {
   }
 
   /**
-   * Team board ids to the Tasks that came from them, read from each Task's first Trail entry (ADR 0007).
+   * Team board ids to the Tasks that came from them, read from each Task's first Trail entry (ADR 0007),
+   * and the ids of Private Tasks, which never go to the team board (ADR 0010).
    * Members only: the sync runs as a Member.
    */
   async teamBoardLinks(
     who: Reader,
-  ): Promise<{ tasks: Map<string, string>; projects: Map<string, string>; ownersFromSync: Set<string>; setOnBoard: Set<string> }> {
+  ): Promise<{ tasks: Map<string, string>; projects: Map<string, string>; ownersFromSync: Set<string>; setOnBoard: Set<string>; privateTasks: Set<string> }> {
     await this.requireMember(who, "sync with the team board");
     const tasks = new Map<string, string>();
     const projects = new Map<string, string>();
@@ -305,7 +309,9 @@ export class Board {
       }
     }
     for (const id of ownersByPeople) ownersFromSync.delete(id);
-    return { tasks, projects, ownersFromSync, setOnBoard };
+    // Ids only, so the sync keeps Private Tasks off the team board even when the syncing Member isn't on them (ADR 0010).
+    const privateTasks = new Set((await this.store.listTasks({})).filter((t) => t.private).map((t) => t.id));
+    return { tasks, projects, ownersFromSync, setOnBoard, privateTasks };
   }
 
   /** Every Project in a Company, removed ones too, with every Update. Members only: the sync reads it. */
@@ -316,9 +322,9 @@ export class Board {
   }
 
   async removedTasks(who: Reader, companyId: string): Promise<Task[]> {
-    await this.requireMember(who, "see removed Tasks");
+    const me = await this.requireMember(who, "see removed Tasks");
     const tasks = await this.store.listTasks({ companyId });
-    return tasks.filter((t) => t.removed).sort(compareTasks);
+    return tasks.filter((t) => t.removed && canSee(me, t)).sort(compareTasks);
   }
 
   /** The Partner view: what needs attention, what's late, and what changed in the last week. */
@@ -364,13 +370,18 @@ export class Board {
       ? { departmentId: project.departmentId, areaId: project.areaId }
       : await this.home(input.companyId, input.departmentId, input.areaId ?? null);
     const shared = input.shared ?? false;
+    const isPrivate = input.private ?? false;
     if (shared && !canBeShared(home.departmentId)) throw cannotShare();
+    if (shared && isPrivate) throw privateNotShared();
     const { ownerIds, ownerNames, contributorIds } = await this.checkOwners(
-      { companyId: input.companyId, shared },
+      { companyId: input.companyId, shared, private: isPrivate },
       input.ownerIds ?? [],
       input.ownerNames ?? [],
       input.contributorIds ?? [],
     );
+    if (isPrivate && !isOnTask({ id: actor.memberId }, { ownerIds, contributorIds })) {
+      throw new BoardError("invalid", "Keep yourself as an Owner or Contributor on a Private Task, so you can still see it.");
+    }
     if (!PRIORITIES.includes(input.priority)) throw new BoardError("invalid", "Choose High, Medium or Low.");
     const status = input.status ?? "next";
     checkStatus(status);
@@ -378,7 +389,7 @@ export class Board {
     if (status === "blocked" && !note) {
       throw new BoardError("waiting_on_required", "Say what this Task is waiting on.");
     }
-    if (status === "now") await this.checkNowCap(input.companyId, null);
+    if (status === "now" && !isPrivate) await this.checkNowCap(input.companyId, null);
 
     const now = this.clock().toISOString();
     const task: Task = {
@@ -396,6 +407,7 @@ export class Board {
       due: cleanDue(input.due),
       note,
       shared,
+      private: isPrivate,
       removed: false,
       leverId: null,
       createdAt: now,
@@ -475,7 +487,7 @@ export class Board {
       if (!waitingOn) throw new BoardError("waiting_on_required", "Say what this Task is waiting on.");
       after.note = waitingOn;
     }
-    if (move.status === "now" && before.status !== "now") await this.checkNowCap(before.companyId, before.id, actor);
+    if (move.status === "now" && before.status !== "now" && !before.private) await this.checkNowCap(before.companyId, before.id, actor);
     return this.save(actor, before, after);
   }
 
@@ -495,14 +507,15 @@ export class Board {
       ...(await this.home(to.companyId, to.departmentId, to.areaId ?? null)),
     };
     await this.keepProjectIfHomeFits(after);
-    if (after.status === "now" && to.companyId !== before.companyId) await this.checkNowCap(to.companyId, before.id);
+    if (countsForNow(after) && to.companyId !== before.companyId) await this.checkNowCap(to.companyId, before.id);
     return this.save(actor, before, after);
   }
 
   /** Any Member can join a Task as a Contributor. The Trail records it. */
   async joinTask(actor: Actor, id: string): Promise<Task> {
     await this.requireMember(actor, "join a Task");
-    const before = await this.requireTask(id);
+    // A Private Task answers "not found" to anyone not on it, so nobody can join their way in (ADR 0010).
+    const before = await this.requireVisible(actor, id);
     if (before.ownerIds.includes(actor.memberId) || before.contributorIds.includes(actor.memberId)) return before;
     return this.save(actor, before, { ...before, contributorIds: [...before.contributorIds, actor.memberId] });
   }
@@ -516,12 +529,31 @@ export class Board {
     const before = await this.requireEditable(actor, id);
     if (before.shared === shared) return before;
     if (shared && !canBeShared(before.departmentId)) throw cannotShare();
+    if (shared && before.private) throw privateNotShared();
     const after: Task = { ...before, shared };
     if (!shared) {
       const members = new Set((await this.store.listPeople()).filter(isMember).map((p) => p.id));
       after.ownerIds = before.ownerIds.filter((p) => members.has(p));
       after.contributorIds = before.contributorIds.filter((p) => members.has(p));
     }
+    return this.save(actor, before, after);
+  }
+
+  /**
+   * Make a Task Private, so only its Owners and Contributors see it, or open it to every Member
+   * again (ADR 0010). Whoever makes it Private must be on it, so it never vanishes for everyone.
+   */
+  async setPrivate(actor: Actor, id: string, isPrivate: boolean): Promise<Task> {
+    const me = await this.requireMember(actor, "make Tasks private");
+    const before = await this.requireEditable(actor, id);
+    if (before.private === isPrivate) return before;
+    if (isPrivate && before.shared) throw new BoardError("invalid", "Stop sharing this Task before making it private.");
+    if (isPrivate && !isOnTask(me, before)) {
+      throw new BoardError("invalid", "Join this Task before making it private, so you can still see it.");
+    }
+    const after: Task = { ...before, private: isPrivate };
+    // A Private Task doesn't count towards Now, so opening one up takes a place there.
+    if (countsForNow(after) && !before.removed) await this.checkNowCap(before.companyId, before.id, actor);
     return this.save(actor, before, after);
   }
 
@@ -538,7 +570,7 @@ export class Board {
     const before = await this.requireEditable(actor, id);
     if (!before.removed) return before;
     const after: Task = { ...before, removed: false };
-    if (after.status === "now" && (await this.nowCount(after.companyId, after.id)) >= NOW_CAP) after.status = "next";
+    if (countsForNow(after) && (await this.nowCount(after.companyId, after.id)) >= NOW_CAP) after.status = "next";
     return this.save(actor, before, after);
   }
 
@@ -851,11 +883,13 @@ export class Board {
     await this.commit(entries, () => this.store.putTask(after));
 
     // Two people can move a Task into Now in the same second. Re-check, and move the later one back.
-    if (after.status === "now" && (before.status !== "now" || before.companyId !== after.companyId)) {
+    if (countsForNow(after) && (!countsForNow(before) || before.companyId !== after.companyId)) {
       if ((await this.nowCount(after.companyId, null)) > NOW_CAP) {
-        const reverted = { ...after, status: before.status, companyId: before.companyId, updatedAt: this.clock().toISOString() };
+        const reverted = { ...after, status: before.status, companyId: before.companyId, private: before.private, updatedAt: this.clock().toISOString() };
         await this.commit(
-          [this.entry(actor, reverted, "task", after.id, "moved", "status", "now", before.status)],
+          taskDiff(after, reverted).map(([field, old, value]) =>
+            this.entry(actor, reverted, "task", after.id, actionFor(field, after, reverted), field, old, value),
+          ),
           () => this.store.putTask(reverted),
         );
         throw await this.nowCapError(after.companyId, actor);
@@ -1009,10 +1043,11 @@ export class Board {
 
   /**
    * Owners and Contributors: Members, or this Company's team on a Shared Task. Owners may also be
-   * typed by name, for people who aren't on the board. A Task may have no Owner yet (ADR 0009).
+   * typed by name, for people who aren't on the board. A Task may have no Owner yet (ADR 0009),
+   * but a Private Task needs someone on the board to see it (ADR 0010).
    */
   private async checkOwners(
-    task: { companyId: string; shared: boolean },
+    task: { companyId: string; shared: boolean; private: boolean },
     ownerIds: string[],
     ownerNames: string[],
     contributorIds: string[],
@@ -1032,6 +1067,9 @@ export class Board {
     const named = people.owners(ownerIds, ownerNames);
     const owners = check(named.ownerIds, "Owner");
     const contributors = check(contributorIds, "Contributor").filter((id) => !owners.includes(id));
+    if (task.private && !owners.length && !contributors.length) {
+      throw new BoardError("invalid", "A Private Task needs an Owner or Contributor on the board, or nobody could see it.");
+    }
     return { ownerIds: owners, ownerNames: named.ownerNames, contributorIds: contributors };
   }
 
@@ -1084,14 +1122,17 @@ export class Board {
 
   private async nowCount(companyId: string, excludeTaskId: string | null): Promise<number> {
     const tasks = await this.store.listTasks({ companyId });
-    return tasks.filter((t) => !t.removed && t.status === "now" && t.id !== excludeTaskId).length;
+    return tasks.filter((t) => !t.removed && countsForNow(t) && t.id !== excludeTaskId).length;
   }
 
   private async checkNowCap(companyId: string, excludeTaskId: string | null, who?: Reader): Promise<void> {
     if ((await this.nowCount(companyId, excludeTaskId)) >= NOW_CAP) throw await this.nowCapError(companyId, who);
   }
 
-  /** The cap counts every Task, including ones the Company team can't see, so they are told whom to ask. */
+  /**
+   * The cap counts every Task but Private ones, including Tasks the Company team can't see, so they
+   * are told whom to ask. Private Tasks are left out because no one else could move them (ADR 0010).
+   */
   private async nowCapError(companyId: string, who?: Reader): Promise<BoardError> {
     const company = (await this.store.listCompanies()).find((c) => c.id === companyId);
     const name = company?.name ?? "This company";
@@ -1220,8 +1261,9 @@ type Field =
   | "departmentId"
   | "areaId"
   | "shared"
+  | "private"
   | "removed";
-const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "ownerNames", "contributorIds", "companyOwner", "projectId", "due", "note", "companyId", "departmentId", "areaId", "shared", "removed"];
+const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "ownerNames", "contributorIds", "companyOwner", "projectId", "due", "note", "companyId", "departmentId", "areaId", "shared", "private", "removed"];
 
 type ProjectField = "name" | "goal" | "ownerId" | "ownerName" | "phase" | "repository" | "portalApp" | "liveUrl" | "order" | "departmentId" | "areaId" | "removed";
 const PROJECT_FIELDS: ProjectField[] = ["name", "goal", "ownerId", "ownerName", "phase", "repository", "portalApp", "liveUrl", "order", "departmentId", "areaId", "removed"];
@@ -1239,6 +1281,7 @@ function taskDiff(before: Task, after: Task): [Field, string | null, string | nu
 function actionFor(field: Field, before: Task, after: Task): string {
   if (field === "removed") return after.removed ? "removed" : "restored";
   if (field === "shared") return after.shared ? "shared" : "unshared";
+  if (field === "private") return after.private ? "made_private" : "opened";
   if (field === "status" || field === "companyId" || field === "departmentId" || field === "areaId" || field === "projectId") return "moved";
   if (field === "contributorIds" && after.contributorIds.length > before.contributorIds.length) return "joined";
   return "changed";
@@ -1266,6 +1309,15 @@ function describeChange(entry: TrailEntry): string | null {
     if (entry.action === "replaced" || entry.action === "new_version") return "Document updated";
   }
   return null;
+}
+
+/** Whether a Task takes one of its Company's places in Now. Private Tasks don't (ADR 0010). */
+function countsForNow(task: Pick<Task, "status" | "private">): boolean {
+  return task.status === "now" && !task.private;
+}
+
+function privateNotShared(): BoardError {
+  return new BoardError("invalid", "A Private Task can't be Shared. Open it to Sunridge first.");
 }
 
 function cannotShare(): BoardError {

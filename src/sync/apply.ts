@@ -18,14 +18,15 @@ export async function readBoardSide(board: Board, actor: Actor): Promise<BoardSi
       board.allProjects(actor, company.id),
     ]);
     areas.push(...view.areas);
-    tasks.push(...view.tasks, ...removed);
+    // Private Tasks stay on the board only (ADR 0010), even the syncing Member's own.
+    tasks.push(...[...view.tasks, ...removed].filter((t) => !t.private));
     projects.push(...all.projects);
     updates.push(...all.updates);
   }
-  const { ownersFromSync, setOnBoard, ...links } = await board.teamBoardLinks(actor);
+  const { ownersFromSync, setOnBoard, privateTasks, ...links } = await board.teamBoardLinks(actor);
   // A stand-in: the syncing Member alone, put there by the sync and never changed by a person.
   const standIns = new Set(tasks.filter((t) => ownersFromSync.has(t.id) && t.ownerIds.join() === actor.memberId && !t.ownerNames.length).map((t) => t.id));
-  return { companies, areas, tasks, projects, updates, links, standIns, setOnBoard, people: await board.people(actor) };
+  return { companies, areas, tasks, projects, updates, links, standIns, setOnBoard, privateTasks, people: await board.people(actor) };
 }
 
 export interface ApplyResult {

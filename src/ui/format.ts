@@ -118,6 +118,10 @@ export function describe(entry: TrailEntry, members: Person[], names: Record<str
       return `${who} shared this Task with the company team${via}`;
     case "unshared":
       return `${who} stopped sharing this Task with the company team${via}`;
+    case "made_private":
+      return `${who} made this Task private${via}`;
+    case "opened":
+      return `${who} opened this Task to Sunridge${via}`;
     default:
       return `${who} changed the ${FIELD_LABELS[entry.field ?? ""] ?? entry.field} from ${v(entry.old)} to ${v(entry.new)}${via}`;
   }

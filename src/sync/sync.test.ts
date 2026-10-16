@@ -310,6 +310,40 @@ describe("the team board sync", () => {
     await run(snap);
     expect((await board.board(arif, "c-hbf")).tasks.some((t) => t.title === "Check sample line speeds")).toBe(false);
   });
+  it("keeps Private Tasks off the team board, the syncing Member's own too (ADR 0010)", async () => {
+    const { plan } = await run(snapshot());
+    expect(plan.artifact.some((w) => w.doc_id === artifactIdFor("t-10"))).toBe(false);
+  });
+
+  it("takes a Task off the team board when it is made private, and puts it back when it is opened", async () => {
+    const snap = snapshot();
+    await run(snap);
+    const speeds = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title === "Check sample line speeds")!;
+    const theran: Actor = { memberId: "m-theran", via: "screen" };
+
+    // Locked by Theran, so the syncing Member can't see it, but the sync still knows to keep it off.
+    clock = new Date("2026-10-14T11:00:00Z");
+    await board.setPrivate(theran, speeds.id, true);
+    clock = new Date("2026-10-14T12:00:00Z");
+    const hidden = await run(snap);
+    expect(hidden.plan.artifact).toEqual([expect.objectContaining({ op: "update", doc_id: "a1", data: expect.objectContaining({ removed: true }) })]);
+    expect(snap.actions.a1!.removed).toBe(true);
+    expect(hidden.plan.board).toEqual([]);
+
+    // A change on the team board meanwhile doesn't reach the Private Task, and no copy is made.
+    snap.actions.a1 = { ...snap.actions.a1!, title: "Check every sample line speed", removed: false, editedAt: "2026-10-14T12:30:00Z" };
+    clock = new Date("2026-10-14T13:00:00Z");
+    const again = await run(snap);
+    expect(again.plan.board).toEqual([]);
+    expect((await board.task(theran, speeds.id)).task).toMatchObject({ title: "Check sample line speeds", removed: false });
+    expect(snap.actions.a1!.removed).toBe(true);
+
+    clock = new Date("2026-10-14T14:00:00Z");
+    await board.setPrivate(theran, speeds.id, false);
+    clock = new Date("2026-10-14T15:00:00Z");
+    await run(snap);
+    expect(snap.actions.a1).toMatchObject({ title: "Check sample line speeds", removed: false });
+  });
 });
 
 describe("the sync endpoint", () => {

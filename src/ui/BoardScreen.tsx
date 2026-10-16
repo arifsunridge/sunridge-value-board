@@ -32,6 +32,7 @@ import {
 } from "@/board/model";
 import { CompanyHead } from "./CompanyViews";
 import { formatDay, ownerNames } from "./format";
+import { PrivateMark } from "./PrivateMark";
 
 const FILTERS = [
   { id: "all", label: "Everything" },
@@ -177,7 +178,8 @@ export function BoardScreen({
     const qs = next.toString();
     return qs ? `?${qs}` : "?";
   };
-  const nowCount = tasks.filter((t) => t.status === "now").length;
+  // Private Tasks don't take a place in Now (ADR 0010).
+  const nowCount = tasks.filter((t) => t.status === "now" && !t.private).length;
   const departments = DEPARTMENTS.filter((d) => !isCompanyTeam || canBeShared(d.id));
   const nothingShown = !departments.some((d) => visible.some((t) => t.departmentId === d.id));
   const editable = new Set(view.editable);
@@ -428,6 +430,7 @@ function Card({ task, members, showShared, today, documentCounts, editable: mayC
         ) : (
           task.status !== "done" && <span>No date</span>
         )}
+        {task.private && <PrivateMark />}
         {showShared && task.shared ? (
           <span className="shared-mark" title="Shared with the company team">
             Shared

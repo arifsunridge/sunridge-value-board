@@ -479,3 +479,63 @@ describe("people from the HBF Portal (ADR 0009)", () => {
     expect((await board.people(arif)).find((p) => p.id === colleague.id)).toMatchObject({ name: "New Example Renamed", signedInAt: signedIn });
   });
 });
+
+describe("Private Tasks (ADR 0010)", () => {
+  // t-10 in the demo seed is Arif's Private Task at Sunridge.
+
+  it("shows a Private Task to its Owners and Contributors only, in My Tasks too", async () => {
+    expect((await board.board(arif, "c-sunridge")).tasks.map((t) => t.id)).toContain("t-10");
+    expect((await board.myTasks(arif)).map((t) => t.id)).toContain("t-10");
+    expect((await board.board(jack, "c-sunridge")).tasks.map((t) => t.id)).not.toContain("t-10");
+    expect((await board.summary(jack, "c-sunridge")).rest.map((t) => t.id)).not.toContain("t-10");
+    await expectError(board.task(jack, "t-10"), "not_found");
+    await expectError(board.updateTask(jack, "t-10", { note: "x" }), "not_found");
+    await board.updateTask(arif, "t-10", { contributorIds: ["m-jack"] });
+    expect((await board.task(jack, "t-10")).task.private).toBe(true);
+  });
+
+  it("won't let anyone join their way into a Private Task, or see it once removed", async () => {
+    await expectError(board.joinTask(jack, "t-10"), "not_found");
+    await board.removeTask(arif, "t-10");
+    expect((await board.removedTasks(jack, "c-sunridge")).map((t) => t.id)).not.toContain("t-10");
+    expect((await board.removedTasks(arif, "c-sunridge")).map((t) => t.id)).toContain("t-10");
+  });
+
+  it("keeps whoever adds or locks a Private Task on it, so it never vanishes for everyone", async () => {
+    await expectError(board.createTask(arif, newTask({ ownerIds: ["m-theran"], private: true })), "invalid");
+    // Any Member may change a Task with no Owner, but must join it before locking it.
+    const ownerless = await board.createTask(arif, newTask({ ownerIds: [] }));
+    await expectError(board.setPrivate(jack, ownerless.id, true), "invalid");
+    await expectError(board.updateTask(arif, "t-10", { ownerIds: [], ownerNames: ["Example Colleague"] }), "invalid");
+    // Handing it to a colleague is fine: they can see it.
+    await expect(board.updateTask(arif, "t-10", { ownerIds: ["m-theran"] })).resolves.toMatchObject({ ownerIds: ["m-theran"] });
+    await expectError(board.task(arif, "t-10"), "not_found");
+  });
+
+  it("is never Shared, so a company team never sees it", async () => {
+    await expectError(board.createTask(arif, newTask({ shared: true, private: true })), "invalid");
+    await expectError(board.setPrivate(arif, "t-6", true), "invalid");
+    const task = await board.createTask(arif, newTask({ private: true }));
+    await expectError(board.shareTask(arif, task.id, true), "invalid");
+    await expectError(board.task(jordan, task.id), "not_found");
+    await expectError(board.createTask(arif, newTask({ ownerIds: ["m-arif", "h-jordan"], private: true })), "invalid");
+  });
+
+  it("makes a Task private and opens it again, on the Trail", async () => {
+    await board.setPrivate(arif, "t-5", true);
+    await expectError(board.task(jack, "t-5"), "not_found");
+    expect((await board.task(theran, "t-5")).task.private).toBe(true);
+    await board.setPrivate(theran, "t-5", false);
+    const { trail } = await board.task(jack, "t-5");
+    expect(trail.map((e) => e.action)).toEqual(["made_private", "opened"]);
+    await expectError(board.setPrivate(jordan, "t-2", true), "not_allowed");
+  });
+
+  it("leaves Private Tasks out of the Now cap, and refuses opening one into a full Now", async () => {
+    const mine = await board.createTask(arif, newTask({ title: "Draft my own plan", status: "now", private: true }));
+    for (const title of NOW_FILLERS) await board.createTask(arif, newTask({ title, status: "now" }));
+    expect((await board.board(arif, "c-hbf")).nowCount).toBe(NOW_CAP);
+    await expect(board.createTask(arif, newTask({ title: "Draft another own plan", status: "now", private: true }))).resolves.toMatchObject({ status: "now" });
+    await expectError(board.setPrivate(arif, mine.id, false), "now_cap");
+  });
+});

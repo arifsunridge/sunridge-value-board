@@ -95,6 +95,7 @@ describe("Claude endpoint: tools", () => {
         "list_members",
         "list_projects",
         "list_tasks",
+        "make_private",
         "mark_done_with_evidence",
         "set_task_owners",
         "update_project",

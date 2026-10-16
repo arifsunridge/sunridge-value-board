@@ -38,7 +38,7 @@ import { describe as describeEntry } from "@/ui/format";
 
 const INSTRUCTIONS = `This is the Sunridge Value Board: the Value Creation and Investment team's Tasks for each portfolio company and for Sunridge itself. You act as the signed-in Member; every change you make is recorded in the Task's Trail as made via Claude.
 
-Words: a Company has six Departments (${DEPARTMENTS.map((d) => d.name).join(", ")}); an Area is a slice of one Department in one Company. A Task lives in one Company and Department, and at most one Area. A Project groups Tasks in one such place, with a goal, an Owner, a Phase (Idea, Building, Live or Paused) and Updates (dated lines of news); its Progress is its Done Tasks out of all its Tasks. Status is Next, Now, Blocked or Done. Owners are accountable; they are people on the board, or names typed for anyone else (owner_names), and a Task may have no Owner yet. Contributors help; anyone else is a Viewer. You may change a Task you own or contribute to, or any Task none of whose Owners has signed in yet; otherwise join it first. The company owner is who answers for a Task at the portfolio company, by name.
+Words: a Company has six Departments (${DEPARTMENTS.map((d) => d.name).join(", ")}); an Area is a slice of one Department in one Company. A Task lives in one Company and Department, and at most one Area. A Project groups Tasks in one such place, with a goal, an Owner, a Phase (Idea, Building, Live or Paused) and Updates (dated lines of news); its Progress is its Done Tasks out of all its Tasks. Status is Next, Now, Blocked or Done. Owners are accountable; they are people on the board, or names typed for anyone else (owner_names), and a Task may have no Owner yet. Contributors help; anyone else is a Viewer. You may change a Task you own or contribute to, or any Task none of whose Owners has signed in yet; otherwise join it first. The company owner is who answers for a Task at the portfolio company, by name. A Private Task is seen only by its Owners and Contributors, never by other Members or a company team; never mention one to anyone who isn't on it.
 
 Rules the board enforces: titles have at most ${TITLE_MAX_WORDS} words and start with a verb, with no people's names; each Company has at most ${NOW_CAP} Tasks in Now; moving a Task to Blocked needs a one-line "waiting on". Priority uses the one-week slip test: High = ${PRIORITY_RULE.high} Medium = ${PRIORITY_RULE.medium} Low = ${PRIORITY_RULE.low} High should be rare.
 
@@ -203,6 +203,7 @@ class Lookup {
       overdue: isOverdue(t, today),
       ...(t.status === "blocked" ? { waiting_on: t.note } : { note: t.note || null }),
       shared_with_company_team: t.shared,
+      ...(t.private ? { private: true } : {}),
       you_can_change_it: this.me ? mayChange(this.me, t, this.people) : false,
       ...(t.removed ? { removed: true } : {}),
     };
@@ -382,6 +383,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
         note: noteSchema.optional(),
         status: statusSchema.optional(),
         waiting_on: z.string().optional().describe("Required when status is blocked."),
+        private: z.boolean().optional().describe("Only its Owners and Contributors will see it. The signed-in Member must be one of them."),
       },
       annotations: write,
     },
@@ -405,6 +407,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
           contributorIds: (args.contributors ?? []).map((p) => l.person(p)),
           due: args.due ?? null,
           note: args.status === "blocked" ? args.waiting_on : args.note,
+          private: args.private,
         });
         return l.task(task, board.today());
       }),
@@ -492,6 +495,22 @@ export function boardServer(board: Board, actor: Actor): McpServer {
       }),
     );
   }
+
+  server.registerTool(
+    "make_private",
+    {
+      title: "Make a Task private",
+      description:
+        "Make a Task private, so only its Owners and Contributors see it, or open it to every Sunridge Member again. The signed-in Member must be on the Task to make it private. A Shared Task must stop being shared first.",
+      inputSchema: { task_id: z.string(), private: z.boolean() },
+      annotations: write,
+    },
+    (args) =>
+      attempt(async () => {
+        const l = await lookup();
+        return l.task(await board.setPrivate(actor, args.task_id, args.private), board.today());
+      }),
+  );
 
   server.registerTool(
     "share_task",

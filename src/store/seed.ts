@@ -42,6 +42,7 @@ const task = (t: Partial<Task> & Pick<Task, "id" | "companyId" | "departmentId" 
   due: null,
   note: "",
   shared: false,
+  private: false,
   removed: false,
   leverId: null,
   createdAt: at,
@@ -60,6 +61,7 @@ export const TASKS: Task[] = [
   task({ id: "t-7", companyId: "c-hbf", departmentId: "innovation", areaId: "a-hbf-systems", title: "Set up line-side screens", priority: "low", ownerIds: ["m-theran"], contributorIds: ["m-arif"], projectId: "p-1" }),
   task({ id: "t-8", companyId: "c-hbf", departmentId: "strategy", title: "Circulate structured meeting notes", priority: "low", status: "done", ownerIds: ["m-arif"], due: "2026-10-02" }),
   task({ id: "t-9", companyId: "c-sunridge", departmentId: "innovation", areaId: "a-sun-ai", title: "Pilot the value board", priority: "medium", status: "now", ownerIds: ["m-arif"], due: "2026-11-02" }),
+  task({ id: "t-10", companyId: "c-sunridge", departmentId: "talent", title: "Plan my training for next year", priority: "low", ownerIds: ["m-arif"], private: true }),
 ];
 
 export const PROJECTS: Project[] = [

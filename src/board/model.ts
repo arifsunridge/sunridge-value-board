@@ -102,6 +102,8 @@ export interface Task {
   note: string;
   /** Visible to the Company team (ADR 0005). Off unless a Member turns it on. */
   shared: boolean;
+  /** Seen only by its Owners and Contributors on the board, not by other Members (ADR 0010). Never Shared. */
+  private: boolean;
   removed: boolean;
   /** v2: the Lever this Task supports. Always null in v1. */
   leverId: string | null;
@@ -201,8 +203,17 @@ export function canBeShared(departmentId: DepartmentId): boolean {
   return !NEVER_SHARED.includes(departmentId);
 }
 
-/** Whether this Person may see this Task at all. Members see everything; a Company team sees its Company's Shared Tasks. */
+/** Whether this Person is an Owner or Contributor of this Task. */
+export function isOnTask(person: Pick<Person, "id">, task: Pick<Task, "ownerIds" | "contributorIds">): boolean {
+  return task.ownerIds.includes(person.id) || task.contributorIds.includes(person.id);
+}
+
+/**
+ * Whether this Person may see this Task at all. A Private Task is seen only by its Owners and
+ * Contributors (ADR 0010). Otherwise Members see everything; a Company team sees its Company's Shared Tasks.
+ */
 export function canSee(person: Person, task: Task): boolean {
+  if (task.private) return isOnTask(person, task);
   if (isMember(person)) return true;
   return task.shared && !task.removed && task.companyId === person.companyId && canBeShared(task.departmentId);
 }
