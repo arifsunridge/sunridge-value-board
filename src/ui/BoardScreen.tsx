@@ -31,7 +31,7 @@ import {
 } from "@/board/model";
 import { People } from "@/board/people";
 import { CompanyHead } from "./CompanyViews";
-import { formatDay, ownerNames, shortNames } from "./format";
+import { formatDay, ownerMatches, ownerNames, ownerOptions, shortNames } from "./format";
 import { PrivateMark } from "./PrivateMark";
 
 const FILTERS = [
@@ -98,6 +98,7 @@ export function BoardScreen({
   isCompanyTeam,
   today,
   filter,
+  owner,
   showEmpty,
   showProjects,
 }: {
@@ -108,6 +109,8 @@ export function BoardScreen({
   isCompanyTeam: boolean;
   today: string;
   filter: string;
+  /** Whose Tasks to show (`ownerMatches`); empty for anyone's. */
+  owner: string;
   /** Show Departments and Areas with no Tasks, for dragging a Task into one. */
   showEmpty: boolean;
   /** Show each card's Project above its title. */
@@ -132,7 +135,10 @@ export function BoardScreen({
   const [pendingBlocked, setPendingBlocked] = useState<Placement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor));
 
-  const visible = tasks.filter((t) => matches(filter, t, meId, today));
+  const owners = ownerOptions(tasks, members);
+  const ownerKnown = [...owners.sunridge, ...owners.company, ...owners.others].some((o) => o.value === owner);
+  const theirs = ownerKnown ? tasks.filter((t) => ownerMatches(owner, t)) : tasks;
+  const visible = theirs.filter((t) => matches(filter, t, meId, today));
 
   function open(taskId: string) {
     const next = new URLSearchParams(params);
@@ -206,7 +212,7 @@ export function BoardScreen({
         <div className="chips" role="group" aria-labelledby="filters-l">
           {/* The Company team never sees a Private Task (ADR 0010), so they get no Private chip. */}
           {FILTERS.filter((f) => !(isCompanyTeam && f.id === "private")).map((f) => {
-            const n = tasks.filter((t) => matches(f.id, t, meId, today)).length;
+            const n = theirs.filter((t) => matches(f.id, t, meId, today)).length;
             return (
               <Link
                 key={f.id}
@@ -220,6 +226,33 @@ export function BoardScreen({
             );
           })}
         </div>
+        <label className="filters-l" htmlFor="owner-pick">
+          Owner
+        </label>
+        <select id="owner-pick" className="owner-pick" value={ownerKnown ? owner : ""} onChange={(e) => router.push(hrefWith("owner", e.target.value || null), { scroll: false })}>
+          <option value="">Anyone</option>
+          {owners.sunridge.length > 0 && (
+            <optgroup label="Sunridge">
+              {owners.sunridge.map((o) => (
+                <option key={o.value} value={o.value}>{`${o.label} (${o.count})`}</option>
+              ))}
+            </optgroup>
+          )}
+          {owners.company.length > 0 && (
+            <optgroup label={view.company.name}>
+              {owners.company.map((o) => (
+                <option key={o.value} value={o.value}>{`${o.label} (${o.count})`}</option>
+              ))}
+            </optgroup>
+          )}
+          {owners.others.length > 0 && (
+            <optgroup label="Others">
+              {owners.others.map((o) => (
+                <option key={o.value} value={o.value}>{`${o.label} (${o.count})`}</option>
+              ))}
+            </optgroup>
+          )}
+        </select>
       </div>
 
       <div className="toolbar">
