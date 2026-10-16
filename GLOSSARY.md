@@ -43,12 +43,16 @@ A single piece of work with one Home, a short title starting with a verb, and a 
 _Avoid_: Action, to-do, item, card (a card is how a Task is drawn, not what it is)
 
 **Status**:
-Where a Task stands: Next, Now, Blocked or Done. Each Company has at most ten Tasks in Now, however they are shared between people.
+Where a Task stands: Next, Now, Blocked or Done. Each Company has at most ten Tasks in Now, however they are shared between people. Private Tasks don't count.
 _Avoid_: Stage, state, column, lane, "in progress", "to do"
 
 **Shared**:
 A Task a Member has opened to its Company team. No Task is Shared until a Member says so, and Tasks in Talent & organisation or Finance are never Shared.
 _Avoid_: Public, visible, external, published
+
+**Private**:
+A Task only its Owners and Contributors can see, such as a Member's personal work. Other Members and Company teams never see it, and it doesn't count towards Now. A Private Task is never Shared, and whoever makes a Task Private stays on it.
+_Avoid_: Personal, hidden, locked, secret, confidential
 
 **Priority**:
 How much a Task matters: High, Medium or Low, decided by the one-week slip test.
@@ -86,7 +90,7 @@ Anyone the HBF Portal lets into the board: a Member, or someone in a Company tea
 _Avoid_: User, account
 
 **Member**:
-A Sunridge employee on the board. Members see every Task of every Company. In the HBF Portal their role is **Sunridge team**.
+A Sunridge employee on the board. Members see every Task of every Company, except other people's Private Tasks. In the HBF Portal their role is **Sunridge team**.
 _Avoid_: User, account, team member, guest
 
 **Company team**:

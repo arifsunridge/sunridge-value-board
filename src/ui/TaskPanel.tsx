@@ -105,6 +105,18 @@ function eligible(members: Person[], companyId: string, shared: boolean): Person
   return members.filter((p) => p.kind === "member" || (shared && p.companyId === companyId));
 }
 
+function PrivateField({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="field">
+      <label className="check">
+        <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
+        Private
+      </label>
+      <div className="hint">Only its Owners and Contributors see it, not the rest of Sunridge. Keep yourself on it.</div>
+    </div>
+  );
+}
+
 function SharedField({ company, departmentId, value, onChange }: { company: Company; departmentId: string; value: boolean; onChange: (v: boolean) => void }) {
   if (company.kind !== "portfolio") return null;
   const allowed = canBeShared(departmentId as Parameters<typeof canBeShared>[0]);
@@ -308,9 +320,11 @@ function NewTaskForm({ company, areas, projects, members, meId, onDone }: Props 
   const [due, setDue] = useState("");
   const [note, setNote] = useState("");
   const [shared, setShared] = useState(false);
+  const [isPrivate, setPrivate] = useState(false);
   const { error, pending, run } = useAction();
   const { departmentId } = parseHome(home, areas);
-  const isShared = shared && company.kind === "portfolio" && canBeShared(departmentId as Parameters<typeof canBeShared>[0]);
+  // A Private Task is never Shared (ADR 0010).
+  const isShared = !isPrivate && shared && company.kind === "portfolio" && canBeShared(departmentId as Parameters<typeof canBeShared>[0]);
   const people = eligible(members, company.id, isShared);
   const keep = (ids: string[]) => ids.filter((id) => people.some((p) => p.id === id));
 
@@ -333,6 +347,7 @@ function NewTaskForm({ company, areas, projects, members, meId, onDone }: Props 
               due: due || null,
               note,
               shared: isShared,
+              private: isPrivate,
             }),
           (r) => r.id && onDone(r.id),
         );
@@ -346,7 +361,8 @@ function NewTaskForm({ company, areas, projects, members, meId, onDone }: Props 
         <HomeSelect id="home" areas={areas} value={home} onChange={setHome} />
       </div>
       <ProjectField projects={projects} value={projectId} onChange={setProjectId} />
-      <SharedField company={company} departmentId={departmentId} value={shared} onChange={setShared} />
+      <PrivateField value={isPrivate} onChange={setPrivate} />
+      {!isPrivate && <SharedField company={company} departmentId={departmentId} value={shared} onChange={setShared} />}
       <PeopleField label="Owners" members={people} value={keep(owners)} onChange={setOwners} />
       <OwnerNamesField value={ownerNames} onChange={setOwnerNames} />
       <CompanyOwnerField company={company} value={companyOwner} onChange={setCompanyOwner} />
@@ -387,6 +403,7 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
   const move = useAction();
   const join = useAction();
   const share = useAction();
+  const lock = useAction();
   const disabled = !data.canEdit;
   // The Company team may change the title, due date, note and Status of their own Tasks; the rest stays with Sunridge.
   const sunridgeOnly = disabled || isCompanyTeam;
@@ -431,7 +448,27 @@ function EditTask(props: Props & { data: Extract<PanelData, { mode: "edit" }> })
       {isCompanyTeam && !disabled && (
         <p className="banner">Sunridge shared this Task with you. You can change its title, Status, due date and note, and add links.</p>
       )}
-      {!isCompanyTeam && company.kind === "portfolio" && (
+      {!isCompanyTeam && (
+        <div className="banner shared-state">
+          {task.private
+            ? "Private: only its Owners and Contributors see this Task."
+            : "Every Sunridge Member can see this Task. Make it private to keep it to its Owners and Contributors."}
+          {!disabled && !task.shared && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                className="button secondary"
+                disabled={lock.pending}
+                onClick={() => lock.run(() => actions.setPrivate(task.id, !task.private))}
+              >
+                {task.private ? "Open to Sunridge" : "Make private"}
+              </button>
+            </div>
+          )}
+          {!disabled && task.shared && <div className="hint">Stop sharing it to make it private.</div>}
+          <ErrorBanner message={lock.error} />
+        </div>
+      )}
+      {!isCompanyTeam && company.kind === "portfolio" && !task.private && (
         <div className="banner shared-state">
           {task.shared ? `Shared with the ${company.name} team.` : `Not shared: only Sunridge sees this Task.`}
           {!disabled && (canBeShared(task.departmentId) || task.shared) && (

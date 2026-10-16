@@ -78,7 +78,8 @@ describe.each(stores)("%s store", (_name, make) => {
     const store = await make();
     const task = await store.getTask("t-1");
     expect(task).toEqual(TASKS[0]);
-    expect((await store.listTasks({ companyId: "c-sunridge" })).map((t) => t.id)).toEqual(["t-9"]);
+    expect(await store.getTask("t-10")).toEqual(TASKS.find((t) => t.private));
+    expect((await store.listTasks({ companyId: "c-sunridge" })).map((t) => t.id).sort()).toEqual(["t-10", "t-9"]);
     expect(await store.listTasks({})).toHaveLength(TASKS.length);
   });
 

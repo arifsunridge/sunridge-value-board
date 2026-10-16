@@ -14,7 +14,9 @@ export default async function MyTasks() {
   return (
     <main>
       <h1>My Tasks</h1>
-      <p className="muted">Tasks you own or contribute to, across every company.</p>
+      <p className="muted">
+        Tasks you own or contribute to, across every company. Private ones carry a lock: only their Owners and Contributors see them.
+      </p>
       {companies.map((c) => {
         const mine = open.filter((t) => t.companyId === c.id);
         return mine.length ? (

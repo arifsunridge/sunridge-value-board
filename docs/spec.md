@@ -121,6 +121,11 @@ Each goal is measured from the Trail, so none needs manual tracking.
 - [ ] Someone in the Company team can own or contribute to a Shared Task, and on those can change Status, title, due date and note, and add Links. Any Member may change a Task none of whose Owners has signed in (ADR 0009).
 - [ ] Stopping sharing takes the Company team off the Task. A Shared Task can't change Company or move into Talent & organisation or Finance.
 
+**P0.16 Private Tasks** ([ADR 0010](adr/0010-private-tasks.md)).
+- [ ] A Member can make a Task Private, or add it Private. Only its Owners and Contributors then see it; anyone else gets "not found". Private is off by default and recorded in the Trail.
+- [ ] Private Tasks show in My Tasks and on the board with a lock. They don't count towards Now, are never Shared and never go to the team board.
+- [ ] Whoever makes a Task Private must be on it, and a Private Task always keeps someone on the board as an Owner or Contributor.
+
 ### P1: soon after v1 (design for these now)
 
 **P1.1 Claude reads and updates the board.** From Claude chat or Claude Code, a Member can list, search and read Tasks. They can also create, update (Status, Priority, Owners, due date, note), remove and restore Tasks, and add Document links.

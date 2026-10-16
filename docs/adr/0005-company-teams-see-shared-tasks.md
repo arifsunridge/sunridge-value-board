@@ -1,7 +1,7 @@
 ---
 status: accepted
 supersedes: 0001
-amended_by: 0009
+amended_by: 0009, 0010
 ---
 
 # Company teams see only Shared Tasks, and update the ones they own

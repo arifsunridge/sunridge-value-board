@@ -48,6 +48,7 @@ export const SCHEMA = [
     due CHAR(10) NULL,
     note VARCHAR(400) NOT NULL,
     shared TINYINT(1) NOT NULL,
+    is_private TINYINT(1) NOT NULL DEFAULT 0,
     removed TINYINT(1) NOT NULL,
     lever_id VARCHAR(64) NULL,
     created_at VARCHAR(30) NOT NULL,
@@ -123,7 +124,7 @@ export const SCHEMA = [
 ];
 
 /**
- * Columns added after the first release (ADR 0008, 0009). A new database gets them from SCHEMA;
+ * Columns added after the first release (ADR 0008, 0009, 0010). A new database gets them from SCHEMA;
  * an existing one gets them from `npm run db:init`, because the app's own login may not ALTER.
  */
 export const MIGRATIONS: { table: string; column: string; definition: string; then?: string }[] = [
@@ -132,6 +133,7 @@ export const MIGRATIONS: { table: string; column: string; definition: string; th
   { table: "vb_tasks", column: "owner_names", definition: "TEXT NULL" },
   { table: "vb_tasks", column: "company_owner", definition: "VARCHAR(200) NOT NULL DEFAULT ''" },
   { table: "vb_tasks", column: "project_id", definition: "VARCHAR(64) NULL, ADD INDEX (project_id)" },
+  { table: "vb_tasks", column: "is_private", definition: "TINYINT(1) NOT NULL DEFAULT 0" },
 ];
 
 /** The two Companies v1 starts with. Inserted only when missing; names can be changed in the database. */
@@ -296,6 +298,7 @@ export class MysqlStore implements Store {
       due: opt(r.due),
       note: str(r.note),
       shared: bool(r.shared),
+      private: bool(r.is_private ?? 0),
       removed: bool(r.removed),
       leverId: opt(r.lever_id),
       createdAt: str(r.created_at),
@@ -318,13 +321,13 @@ export class MysqlStore implements Store {
 
   async putTask(t: Task): Promise<void> {
     await this.run(
-      `INSERT INTO vb_tasks (id, company_id, department_id, area_id, title, status, priority, owner_ids, owner_names, contributor_ids, company_owner, project_id, due, note, shared, removed, lever_id, created_at, created_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO vb_tasks (id, company_id, department_id, area_id, title, status, priority, owner_ids, owner_names, contributor_ids, company_owner, project_id, due, note, shared, is_private, removed, lever_id, created_at, created_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE company_id = VALUES(company_id), department_id = VALUES(department_id), area_id = VALUES(area_id),
          title = VALUES(title), status = VALUES(status), priority = VALUES(priority), owner_ids = VALUES(owner_ids),
          owner_names = VALUES(owner_names), contributor_ids = VALUES(contributor_ids), company_owner = VALUES(company_owner),
          project_id = VALUES(project_id), due = VALUES(due), note = VALUES(note), shared = VALUES(shared),
-         removed = VALUES(removed), lever_id = VALUES(lever_id), updated_at = VALUES(updated_at)`,
+         is_private = VALUES(is_private), removed = VALUES(removed), lever_id = VALUES(lever_id), updated_at = VALUES(updated_at)`,
       [
         t.id,
         t.companyId,
@@ -341,6 +344,7 @@ export class MysqlStore implements Store {
         t.due,
         t.note,
         t.shared ? 1 : 0,
+        t.private ? 1 : 0,
         t.removed ? 1 : 0,
         t.leverId,
         t.createdAt,

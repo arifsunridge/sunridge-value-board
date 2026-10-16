@@ -42,6 +42,9 @@ export async function joinTask(id: string) {
 export async function shareTask(id: string, shared: boolean) {
   return run((b, a) => b.shareTask(a, id, shared));
 }
+export async function setPrivate(id: string, isPrivate: boolean) {
+  return run((b, a) => b.setPrivate(a, id, isPrivate));
+}
 export async function removeTask(id: string) {
   return run((b, a) => b.removeTask(a, id));
 }
