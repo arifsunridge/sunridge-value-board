@@ -14,9 +14,11 @@ Easiest, once the Render service exists (section 3): add a temporary variable `D
 DB_APP_PASSWORD="$DB_PASSWORD" DB_USER=root DB_PASSWORD="$DB_ADMIN_PASSWORD" npm run db:init
 ```
 
-It creates the `value_board` database and tables (and adds the columns later releases need, so run it again after deploying a release that says so, such as ADR 0008 and 0009) and the board's own login `value_board` with the password already in the service's `DB_PASSWORD` (at least 24 characters). Then delete `DB_ADMIN_PASSWORD` from the service and redeploy. Running it again is safe.
+It creates the `value_board` database and tables and the board's own login `value_board`, with the password already in the service's `DB_PASSWORD` (at least 24 characters). Then delete `DB_ADMIN_PASSWORD` from the service and redeploy. Running it again is safe.
 
-The board's login can add to the Trail but never change or delete it. That is what keeps the Trail append-only (ADR 0006). Without `DB_APP_PASSWORD`, `db:init` prints the `CREATE USER` and `GRANT` statements instead.
+New columns from later releases arrive by themselves: the board adds them when it starts after a deploy, because its login may `ALTER` its working tables. A login set up before that grant existed needs `db:init` once more to get it. The log then says "The board's tables need new columns … Run npm run db:init once with an admin login". Only a new column on the Trail or Project Updates would ever need an admin again, because the board may never change those tables' shape.
+
+The board's login can add to the Trail but never change, delete or reshape it. That is what keeps the Trail append-only (ADR 0006). Without `DB_APP_PASSWORD`, `db:init` prints the `CREATE USER` and `GRANT` statements instead.
 
 ## 2. Portal (Arif, as portal admin)
 

@@ -6,7 +6,7 @@ import type { Store } from "./store";
  * The board's tables in its own `value_board` database on the Render MySQL (ADR 0006).
  * Created on start when missing. Times are ISO strings, so they sort and compare as text.
  * In production the database user may only INSERT and SELECT on vb_trail (docs/setup.md),
- * so the Trail stays append-only even for the app.
+ * so the Trail stays append-only even for the app. See `grants`.
  */
 export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS vb_people (
@@ -125,7 +125,9 @@ export const SCHEMA = [
 
 /**
  * Columns added after the first release (ADR 0008, 0009, 0010). A new database gets them from SCHEMA;
- * an existing one gets them from `npm run db:init`, because the app's own login may not ALTER.
+ * an existing one gets them when the app starts after a deploy, because its login may ALTER the
+ * working tables (`grants`). A column on vb_trail or vb_project_updates would still need
+ * `npm run db:init` with an admin login: the app may never change their shape.
  */
 export const MIGRATIONS: { table: string; column: string; definition: string; then?: string }[] = [
   // Until then the board knew only people who had signed in, so everyone already there has.
@@ -135,6 +137,23 @@ export const MIGRATIONS: { table: string; column: string; definition: string; th
   { table: "vb_tasks", column: "project_id", definition: "VARCHAR(64) NULL, ADD INDEX (project_id)" },
   { table: "vb_tasks", column: "is_private", definition: "TINYINT(1) NOT NULL DEFAULT 0" },
 ];
+
+/** The tables whose rows the board changes. Its login may also add columns to these, so a release's new columns arrive on deploy. */
+export const WORKING_TABLES = ["vb_people", "vb_companies", "vb_areas", "vb_tasks", "vb_projects", "vb_documents"] as const;
+export const APP_USER = "value_board";
+
+/**
+ * The board's login: full use of its working tables, including adding columns, but only INSERT
+ * and SELECT on the Trail and on Project Updates, so those stay append-only (ADR 0006).
+ */
+export function grants(database: string, user = `'${APP_USER}'@'%'`): string[] {
+  return [
+    `GRANT CREATE ON \`${database}\`.* TO ${user}`,
+    ...WORKING_TABLES.map((t) => `GRANT SELECT, INSERT, UPDATE, ALTER ON \`${database}\`.\`${t}\` TO ${user}`),
+    `GRANT SELECT, INSERT ON \`${database}\`.\`vb_trail\` TO ${user}`,
+    `GRANT SELECT, INSERT ON \`${database}\`.\`vb_project_updates\` TO ${user}`,
+  ];
+}
 
 /** The two Companies v1 starts with. Inserted only when missing; names can be changed in the database. */
 export const STARTING_COMPANIES: Company[] = [
@@ -190,7 +209,8 @@ export class MysqlStore implements Store {
         await this.pool.query(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.definition}`);
         if (m.then) await this.pool.query(m.then, [new Date().toISOString()]);
       } catch {
-        throw new Error(`The board's tables need new columns (${m.table}.${m.column}). Run npm run db:init with an admin login.`);
+        // The login lacks ALTER until db:init has given it (once, after this release), or the column is on an append-only table.
+        throw new Error(`The board's tables need new columns (${m.table}.${m.column}). Run npm run db:init once with an admin login.`);
       }
     }
   }

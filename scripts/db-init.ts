@@ -9,20 +9,7 @@
  *   DB_HOST=... DB_USER=<admin> DB_PASSWORD=... DB_NAME=value_board [DB_APP_PASSWORD=...] npm run db:init
  */
 import mysql from "mysql2/promise";
-import { MysqlStore } from "@/store/mysql";
-
-const TABLES = ["vb_people", "vb_companies", "vb_areas", "vb_tasks", "vb_projects", "vb_documents"];
-const APP_USER = "value_board";
-
-/** The board's login: full use of its working tables, but only INSERT and SELECT on the Trail and on Project Updates. */
-export function grants(database: string, user = `'${APP_USER}'@'%'`): string[] {
-  return [
-    `GRANT CREATE ON \`${database}\`.* TO ${user}`,
-    ...TABLES.map((t) => `GRANT SELECT, INSERT, UPDATE ON \`${database}\`.\`${t}\` TO ${user}`),
-    `GRANT SELECT, INSERT ON \`${database}\`.\`vb_trail\` TO ${user}`,
-    `GRANT SELECT, INSERT ON \`${database}\`.\`vb_project_updates\` TO ${user}`,
-  ];
-}
+import { APP_USER, MysqlStore, grants } from "@/store/mysql";
 
 async function main() {
   const env = process.env;
@@ -46,7 +33,7 @@ async function main() {
     await admin.query(`CREATE USER IF NOT EXISTS '${APP_USER}'@'%' IDENTIFIED BY ?`, [env.DB_APP_PASSWORD]);
     await admin.query(`ALTER USER '${APP_USER}'@'%' IDENTIFIED BY ?`, [env.DB_APP_PASSWORD]);
     for (const statement of grants(database)) await admin.query(statement);
-    console.log(`Login ${APP_USER} ready: it can add to the Trail but not change or delete it.`);
+    console.log(`Login ${APP_USER} ready: it adds new columns itself on deploy, and can add to the Trail but not change or delete it.`);
   } else {
     console.log(`\nGive the app its own login (run as an admin):\n`);
     console.log(`CREATE USER IF NOT EXISTS '${APP_USER}'@'%' IDENTIFIED BY '<a long random password>';`);
