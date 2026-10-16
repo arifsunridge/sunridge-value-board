@@ -66,6 +66,12 @@ Lets Members read and change the board from Claude chat or Claude Code, as thems
 
 Claude identifies a Member by the email in their Entra token, which matches their portal sign-in.
 
+`scripts/claude-connector-wizard.sh` walks through all of it (Entra, Cloudflare, Render, then adding the connector in Claude) and checks the endpoint answers. Run it from the repository root: `./scripts/claude-connector-wizard.sh`.
+
+## 7. Updating the board from a Claude chat
+
+`skills/board-update/SKILL.md` lets any Member say "I finished X" in a Claude chat, attach the file, and have Claude propose the change on the team board, then write it once they agree: Done with the file as a Document, a Project Update, Owners by name. An organisation owner uploads the `skills/board-update` folder (zipped) in Claude under Organization settings → Skills, so every Member's chats have it. Until the team moves off the team board, the skill writes there and the hourly sync carries the change to this board.
+
 **Trying it locally.** With `AUTH_MODE=dev` and `CLAUDE_ACCESS_ENABLED=true` in `.env`:
 
 ```
