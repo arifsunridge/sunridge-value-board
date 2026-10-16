@@ -129,6 +129,12 @@ export interface BoardSide {
    * before ADR 0009. Their Owners come from the team board once, whichever side changed last.
    */
   standIns?: Set<string>;
+  /**
+   * "taskId:field" for each Project, company owner or typed Owners the board has ever set (on its
+   * Trail). Until then the board has no value of its own for them, so the team board's fills it in
+   * whichever side changed last, and the board's empty value never goes back.
+   */
+  setOnBoard?: Set<string>;
   /** The people the board knows. Only they can be Owners by id; anyone else is a typed name. */
   people: Person[];
 }
@@ -529,7 +535,9 @@ function planProjects(snapshot: TeamBoardSnapshot, side: BoardSide, now: string,
 export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: string): SyncPlan {
   const plan: SyncPlan = { projects: [], board: [], artifact: [], skipped: [] };
   if (!snapshot.config.people[snapshot.config.syncAs]) throw new Error("The sync config's syncAs has no email in people.");
-  planProjects(snapshot, side, now, plan);
+  // A snapshot without groups (an older routine) says nothing about Projects: leave them, and every Task's Project, alone.
+  const withProjects = snapshot.groups !== undefined;
+  if (withProjects) planProjects(snapshot, side, now, plan);
 
   const tasksById = new Map(side.tasks.map((t) => [t.id, t]));
   const linkedTaskIds = new Set<string>();
@@ -563,7 +571,15 @@ export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: stri
     // The board's value as the artifact would hold it, read back.
     const roundTrip = fromTeamBoard({ ...action, ...toTeamBoard(current, snapshot, side, action) } as TeamBoardAction, snapshot, side);
     if (typeof roundTrip === "string") continue;
-    const differing = FIELDS.filter((f) => !same(shape, roundTrip, f));
+    const fill = FILLED.filter(
+      (f) =>
+        (f !== "project" || withProjects) &&
+        !side.setOnBoard?.has(`${task.id}:${FILLED_ON_BOARD[f]}`) &&
+        hasValue(shape, f) &&
+        !hasValue(boardShape, f),
+    );
+    const filled: readonly Field[] = fill;
+    const differing = FIELDS.filter((f) => !same(shape, roundTrip, f) && !filled.includes(f) && (f !== "project" || withProjects));
     const release: Field[] = standIn ? ["ownerIds", "ownerNames"] : [];
     const teamBoardTime = action.editedAt ?? action.createdAt ?? "";
     if (differing.length && teamBoardTime > task.updatedAt) {
@@ -572,13 +588,22 @@ export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: stri
         teamBoardId: id,
         taskId: task.id,
         shape: { ...shape, ownerIds: keepUnknownOwners(shape, boardShape, snapshot) },
-        fields: [...new Set([...differing, ...release])],
+        fields: [...new Set([...differing, ...release, ...fill])],
       });
       continue;
     }
-    if (standIn) plan.board.push({ kind: "update", teamBoardId: id, taskId: task.id, shape, fields: release });
+    if (standIn || fill.length) {
+      // Only these fields come across; the board keeps the Owners it chose unless a stand-in is released.
+      const keep = standIn ? shape : { ...shape, ownerIds: sortIds(task.ownerIds) };
+      plan.board.push({ kind: "update", teamBoardId: id, taskId: task.id, shape: keep, fields: [...new Set([...release, ...fill])] });
+    }
     if (!differing.length) continue;
-    plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data: { ...toTeamBoard(current, snapshot, side, action), ...edited } });
+    const data: Record<string, unknown> = { ...toTeamBoard(current, snapshot, side, action), ...edited };
+    // The team board keeps what the board hasn't got yet, and its own Project when the routine sent no groups.
+    if (fill.includes("project") || !withProjects) data.groupId = action.groupId ?? "";
+    if (fill.includes("companyOwner")) data.hbfOwner = action.hbfOwner ?? "";
+    if (fill.includes("ownerNames")) data.ownerNames = action.ownerNames ?? [];
+    plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data });
   }
 
   // Tasks added on the board go to the team board.
@@ -597,6 +622,16 @@ export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: stri
     });
   }
   return plan;
+}
+
+/** Fields this release added to the sync, and their names on the board's Trail. */
+const FILLED = ["project", "companyOwner", "ownerNames"] as const satisfies readonly Field[];
+const FILLED_ON_BOARD: Record<(typeof FILLED)[number], string> = { project: "projectId", companyOwner: "companyOwner", ownerNames: "ownerNames" };
+
+function hasValue(shape: Shape, field: (typeof FILLED)[number]): boolean {
+  if (field === "project") return shape.groupId !== null;
+  if (field === "companyOwner") return shape.companyOwner !== "";
+  return shape.ownerNames.length > 0;
 }
 
 /** Owners the team board can't name stay on the board Task. */

@@ -281,13 +281,17 @@ export class Board {
    * Team board ids to the Tasks that came from them, read from each Task's first Trail entry (ADR 0007).
    * Members only: the sync runs as a Member.
    */
-  async teamBoardLinks(who: Reader): Promise<{ tasks: Map<string, string>; projects: Map<string, string>; ownersFromSync: Set<string> }> {
+  async teamBoardLinks(
+    who: Reader,
+  ): Promise<{ tasks: Map<string, string>; projects: Map<string, string>; ownersFromSync: Set<string>; setOnBoard: Set<string> }> {
     await this.requireMember(who, "sync with the team board");
     const tasks = new Map<string, string>();
     const projects = new Map<string, string>();
     // Tasks whose Owners only the sync ever set: before ADR 0009 it stood in as Owner for people it couldn't place.
     const ownersFromSync = new Set<string>();
     const ownersByPeople = new Set<string>();
+    // "taskId:field" for the fields this release added, once anything has set them on the board.
+    const setOnBoard = new Set<string>();
     for (const company of await this.store.listCompanies()) {
       for (const e of await this.store.listTrail({ companyId: company.id })) {
         const match = e.action === "created" ? e.old?.match(TEAM_BOARD_SOURCE) : null;
@@ -295,10 +299,13 @@ export class Board {
         if (match && e.subject === "task" && e.taskId && e.via === "sync") ownersFromSync.add(e.taskId);
         if (match && e.subject === "project") projects.set(match[1]!, e.subjectId);
         if (e.subject === "task" && e.taskId && (e.field === "ownerIds" || e.field === "ownerNames") && e.via !== "sync") ownersByPeople.add(e.taskId);
+        if (e.subject === "task" && e.taskId && (e.field === "projectId" || e.field === "companyOwner" || e.field === "ownerNames")) {
+          setOnBoard.add(`${e.taskId}:${e.field}`);
+        }
       }
     }
     for (const id of ownersByPeople) ownersFromSync.delete(id);
-    return { tasks, projects, ownersFromSync };
+    return { tasks, projects, ownersFromSync, setOnBoard };
   }
 
   /** Every Project in a Company, removed ones too, with every Update. Members only: the sync reads it. */

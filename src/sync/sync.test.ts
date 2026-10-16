@@ -200,6 +200,56 @@ describe("the team board sync", () => {
     expect((await board.task(arif, budget.id)).task.ownerIds).toEqual(["m-arif"]);
   });
 
+  it("fills a Project, HBF owner and typed Owners the board never had, even when the board changed last", async () => {
+    // As in production on 16 Oct: Tasks synced before this release, then edited on the board, then the team board gains groups.
+    const snap = snapshot();
+    await run(snap);
+    const speeds = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title === "Check sample line speeds")!;
+    clock = new Date("2026-10-14T11:00:00Z");
+    await board.updateTask({ memberId: "m-theran", via: "screen" }, speeds.id, { due: "2026-11-02" });
+    snap.groups = { g1: { name: "Example line project", projectId: "p-acme", categoryId: "s-plant", editedAt: "2026-10-02T09:00:00Z" } };
+    snap.actions.a1 = { ...snap.actions.a1!, groupId: "g1", hbfOwner: "Example Manager", ownerNames: ["Example Colleague"] };
+    clock = new Date("2026-10-14T12:00:00Z");
+    const { plan } = await run(snap);
+    // The board's newer due date goes to the team board, which keeps its group, HBF owner and names.
+    const write = plan.artifact.find((w) => w.doc_id === "a1")!;
+    expect(write.data).toMatchObject({ due: "2026-11-02", groupId: "g1", hbfOwner: "Example Manager", ownerNames: ["Example Colleague"] });
+    expect(snap.actions.a1).toMatchObject({ groupId: "g1", hbfOwner: "Example Manager" });
+    const task = (await board.task(arif, speeds.id)).task;
+    const project = (await board.board(arif, "c-hbf")).projects.find((p) => p.project.name === "Example line project")!;
+    expect(task).toMatchObject({ projectId: project.project.id, companyOwner: "Example Manager", ownerNames: ["Example Colleague"], ownerIds: ["m-theran"] });
+    clock = new Date("2026-10-14T13:00:00Z");
+    expect((await run(snap)).plan).toMatchObject({ board: [], artifact: [] });
+
+    // Once set on the board, clearing it there is a real change and goes to the team board.
+    clock = new Date("2026-10-14T14:00:00Z");
+    await board.updateTask({ memberId: "m-theran", via: "screen" }, speeds.id, { companyOwner: "" });
+    clock = new Date("2026-10-14T15:00:00Z");
+    await run(snap);
+    expect(snap.actions.a1).toMatchObject({ hbfOwner: "" });
+  });
+
+  it("leaves Projects alone when the routine sends no groups", async () => {
+    const snap = snapshot();
+    snap.groups = { g1: { name: "Example line project", projectId: "p-acme", categoryId: "s-plant", editedAt: "2026-10-02T09:00:00Z" } };
+    snap.actions.a1 = { ...snap.actions.a1!, groupId: "g1" };
+    await run(snap);
+    const speeds = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title === "Check sample line speeds")!;
+    expect(speeds.projectId).not.toBeNull();
+    // An older routine: no groups in the snapshot, and a newer change on the team board.
+    const older: TeamBoardSnapshot = { ...snap, groups: undefined, actions: { ...snap.actions, a1: { ...snap.actions.a1!, priority: "low", editedAt: "2026-10-14T11:30:00Z" } } };
+    clock = new Date("2026-10-14T12:00:00Z");
+    const { plan } = await run(older);
+    expect(plan.artifact.filter((w) => w.collection === "groups")).toEqual([]);
+    expect((await board.task(arif, speeds.id)).task).toMatchObject({ priority: "low", projectId: speeds.projectId });
+    // And a board change sent back keeps the team board's group.
+    clock = new Date("2026-10-14T13:00:00Z");
+    await board.updateTask({ memberId: "m-theran", via: "screen" }, speeds.id, { due: "2026-11-09" });
+    clock = new Date("2026-10-14T14:00:00Z");
+    const back = await run(older);
+    expect(back.plan.artifact.find((w) => w.doc_id === "a1")!.data).toMatchObject({ due: "2026-11-09", groupId: "g1" });
+  });
+
   it("brings team board Projects to the board, puts their Tasks in them, and merges Updates both ways (ADR 0008)", async () => {
     const snap = snapshot();
     snap.groups = {
