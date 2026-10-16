@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { Board } from "@/board/board";
 import { MemoryStore } from "./memory";
-import { MysqlStore } from "./mysql";
+import { MIGRATIONS, MysqlStore, WORKING_TABLES, grants } from "./mysql";
 import { AREAS, COMPANIES, PEOPLE, TASKS } from "./seed";
 import type { Store } from "./store";
 
@@ -114,5 +114,24 @@ describe.each(stores)("%s store", (_name, make) => {
       "Moved to Blocked",
     ]);
     expect((await board.board(actor, "c-hbf")).documentCounts[task.id]).toBe(1);
+  });
+});
+
+describe("the board's database login", () => {
+  const statements = grants("value_board");
+  const on = (table: string) => statements.filter((g) => g.includes(`\`${table}\``));
+
+  it("keeps the Trail and Project Updates append-only: insert and read, never change or reshape", () => {
+    for (const table of ["vb_trail", "vb_project_updates"]) {
+      expect(on(table)).toEqual([`GRANT SELECT, INSERT ON \`value_board\`.\`${table}\` TO 'value_board'@'%'`]);
+    }
+    expect(statements.join()).not.toMatch(/DELETE|DROP|ALL PRIVILEGES/);
+  });
+
+  it("may add every column a release brings, so they arrive on deploy without an admin", () => {
+    for (const m of MIGRATIONS) {
+      expect(WORKING_TABLES).toContain(m.table);
+      expect(on(m.table).join()).toContain("ALTER");
+    }
   });
 });

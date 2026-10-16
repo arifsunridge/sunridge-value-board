@@ -18,6 +18,7 @@ We chose this over keeping Microsoft Lists in the Sunridge tenant (ADR 0002 and 
 
 - Task, Area, Document and Trail content is now stored on Render in Oregon (US), next to the portal's MySQL, outside the Sunridge tenant. Files still live in SharePoint; the board keeps links only.
 - The board writes the Trail first and the change second, as before. The database user may only INSERT and SELECT on the Trail table, so the Trail stays append-only even for the app.
+- The database user may also ALTER its working tables (People, Companies, Areas, Tasks, Projects, Documents), so it adds a release's new columns itself when it starts (added 16 October 2026, after each release needed an admin to run `db:init`). Its UPDATE grant already lets it overwrite anything in those tables, so ALTER adds no trust. It never gets ALTER, UPDATE or DELETE on the Trail or Project Updates; a test keeps every migration on the working tables.
 - Logs carry error names and HTTP status only, as before (ADR 0002's logging rule stands).
 - A Person's id is the lower-cased email the portal verified, matching the portal's "one email, one account".
 - Claude access (P1.1, ADR 0004) needs `/mcp` exempted from Cloudflare Access, because Claude signs in with Entra tokens. It stays off until that is set up.
