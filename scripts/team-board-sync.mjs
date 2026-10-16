@@ -33,7 +33,8 @@ if (!config) throw new Error("No valueBoardSync/config document in the export.")
 const snapshot = {
   actions: collection("actions"),
   categories: collection("categories"),
-  groups: collection("groups"),
+  // No groups folder means the export left Projects out: send none, so the board leaves them alone.
+  groups: existsSync(join(exportDir, "groups")) ? collection("groups") : undefined,
   documents: collection("documents"),
   config,
 };
@@ -59,7 +60,7 @@ writeFileSync(join(outDir, "batches.json"), JSON.stringify(batches, null, 2));
 
 console.log(
   JSON.stringify({
-    sent: { actions: Object.keys(snapshot.actions).length, groups: Object.keys(snapshot.groups).length },
+    sent: { actions: Object.keys(snapshot.actions).length, groups: Object.keys(snapshot.groups ?? {}).length },
     board: {
       created: body.board.created,
       updated: body.board.updated,

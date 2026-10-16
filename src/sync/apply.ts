@@ -22,10 +22,10 @@ export async function readBoardSide(board: Board, actor: Actor): Promise<BoardSi
     projects.push(...all.projects);
     updates.push(...all.updates);
   }
-  const { ownersFromSync, ...links } = await board.teamBoardLinks(actor);
+  const { ownersFromSync, setOnBoard, ...links } = await board.teamBoardLinks(actor);
   // A stand-in: the syncing Member alone, put there by the sync and never changed by a person.
   const standIns = new Set(tasks.filter((t) => ownersFromSync.has(t.id) && t.ownerIds.join() === actor.memberId && !t.ownerNames.length).map((t) => t.id));
-  return { companies, areas, tasks, projects, updates, links, standIns, people: await board.people(actor) };
+  return { companies, areas, tasks, projects, updates, links, standIns, setOnBoard, people: await board.people(actor) };
 }
 
 export interface ApplyResult {
