@@ -25,7 +25,7 @@ import {
   type Task,
 } from "@/board/model";
 import { People } from "@/board/people";
-import { words } from "@/board/rules";
+import { cleanUrl, words } from "@/board/rules";
 import { shortNote } from "@/import/team-board";
 
 /** One action document in the artifact's `actions` collection. Unknown fields are kept as they are. */
@@ -379,6 +379,15 @@ function same(a: Shape, b: Shape, field: Field): boolean {
 
 // ---------- Projects ----------
 
+/** A live address as the board keeps it, so "https://x.app" and "https://x.app/" are the same address. */
+function liveUrlOf(url: string | undefined): string {
+  try {
+    return url ? cut(cleanUrl(url), 400) : "";
+  } catch {
+    return "";
+  }
+}
+
 export function projectFromTeamBoard(group: TeamBoardGroup, snapshot: TeamBoardSnapshot, side: BoardSide): ProjectShape | string {
   const company = companyFor(group.projectId, snapshot, side);
   if (!company) return "Its project has no Company on the board.";
@@ -394,7 +403,7 @@ export function projectFromTeamBoard(group: TeamBoardGroup, snapshot: TeamBoardS
     phase: (PHASES as readonly string[]).includes(group.phase ?? "") ? (group.phase as Phase) : null,
     repository: cut(group.repository, 400),
     portalApp: cut(group.portalApp, 64).toLowerCase(),
-    liveUrl: /^https:\/\//.test(group.liveUrl ?? "") ? cut(group.liveUrl, 400) : "",
+    liveUrl: liveUrlOf(group.liveUrl),
     order: typeof group.order === "number" && Number.isFinite(group.order) ? Math.round(group.order) : 0,
     removed: Boolean(group.removed),
   };

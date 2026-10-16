@@ -250,6 +250,15 @@ describe("the team board sync", () => {
     expect(back.plan.artifact.find((w) => w.doc_id === "a1")!.data).toMatchObject({ due: "2026-11-09", groupId: "g1" });
   });
 
+  it("treats a live address with and without its closing slash as the same", async () => {
+    const snap = snapshot();
+    snap.groups = { g1: { name: "Example app", projectId: "p-acme", categoryId: "s-plant", liveUrl: "https://example-app.example.com", editedAt: "2026-10-20T09:00:00Z" } };
+    await run(snap);
+    const again = await run(snap);
+    expect(again.plan.projects).toEqual([]);
+    expect(again.plan.artifact).toEqual([]);
+  });
+
   it("brings team board Projects to the board, puts their Tasks in them, and merges Updates both ways (ADR 0008)", async () => {
     const snap = snapshot();
     snap.groups = {
