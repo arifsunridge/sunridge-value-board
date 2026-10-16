@@ -96,6 +96,10 @@ a:hover {
   margin: 0 auto;
   padding-inline: var(--gutter);
 }
+/* The board uses a wide screen; reading pages keep the narrower frame. */
+.wrap:has(.board) {
+  max-width: 1880px;
+}
 .mast {
   border-bottom: var(--rule);
   padding-top: 16px;
@@ -586,7 +590,8 @@ fieldset {
 .grid-h,
 .lane {
   display: grid;
-  grid-template-columns: 190px repeat(4, minmax(0, 1fr));
+  /* Next and Now, where the work is, get half as much room again as Blocked and Done. */
+  grid-template-columns: 170px minmax(0, 3fr) minmax(0, 3fr) minmax(0, 2fr) minmax(0, 2fr);
   gap: 8px;
 }
 .grid-h {
@@ -621,7 +626,7 @@ fieldset {
   font-size: 12px;
 }
 .lane {
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-bottom: var(--rule);
 }
 .lane-l {
@@ -644,8 +649,15 @@ fieldset {
   padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
+}
+/* Wide Next and Now cells hold cards side by side; a narrow one falls back to a single column. */
+.cell.next,
+.cell.now {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  align-content: start;
 }
 .cell.now {
   background: var(--now);
@@ -668,7 +680,7 @@ fieldset {
   background: var(--white);
   border: 1px solid var(--line);
   border-left: 4px solid var(--low);
-  padding: 7px 9px;
+  padding: 5px 8px;
   cursor: pointer;
   touch-action: manipulation;
   position: relative;
@@ -697,8 +709,8 @@ fieldset {
 .card .t {
   display: block;
   font-weight: 600;
-  font-size: 14px;
-  line-height: 19px;
+  font-size: 13.5px;
+  line-height: 18px;
   overflow-wrap: anywhere;
 }
 .card .w {
@@ -716,7 +728,7 @@ fieldset {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 3px;
   font-size: 12px;
   color: var(--grey);
   flex-wrap: wrap;
@@ -729,8 +741,8 @@ fieldset {
 .card .card-owners {
   /* Inline boxes, not flex: a flex row inside a <button> is sized as if every chip wrapped. */
   display: block;
-  margin-top: 7px;
-  padding-top: 7px;
+  margin-top: 5px;
+  padding-top: 5px;
   border-top: 1px solid var(--line);
   line-height: 0;
 }
@@ -780,7 +792,7 @@ fieldset {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   font-size: 10.5px;
   line-height: 14px;
   letter-spacing: 0.8px;
@@ -872,6 +884,7 @@ fieldset {
   }
   .cell::before {
     content: attr(data-label);
+    grid-column: 1 / -1;
     display: block;
     font-size: 11px;
     font-weight: 600;
