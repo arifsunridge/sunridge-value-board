@@ -1,5 +1,6 @@
 import type { AccessDecision, PortalPerson } from "@arifsunridge/portal-kit";
 import type { Person } from "@/board/model";
+import { displayName } from "@/board/people";
 
 /** Why someone can't get in, in words for the no-access page. Never shows the token or the portal's answer in full. */
 export type Refusal = "signin" | "no_access" | "portal_unreachable" | "audience";
@@ -16,7 +17,7 @@ export function personFromPortal(
 ): Person | Refusal {
   if (!decision.allowed) return decision.reason === "portal_unreachable" ? "portal_unreachable" : "no_access";
   const email = identity.email.toLowerCase();
-  const base = { id: email, email, name: identity.name || email, signedInAt: null };
+  const base = { id: email, email, name: displayName(identity.name ?? "", email), signedInAt: null };
   if (decision.audience === "sunridge" && decision.role === "Sunridge team") return { ...base, kind: "member", companyId: null };
   if (decision.audience === "hbf" && decision.role === "HBF team") return { ...base, kind: "company", companyId: companyTeamId };
   return "audience";
