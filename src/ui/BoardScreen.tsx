@@ -37,6 +37,7 @@ import { PrivateMark } from "./PrivateMark";
 const FILTERS = [
   { id: "all", label: "Everything" },
   { id: "mine", label: "Mine" },
+  { id: "private", label: "Private" },
   { id: "high", label: "High" },
   { id: "blocked", label: "Blocked" },
   { id: "overdue", label: "Late", alert: true },
@@ -48,6 +49,8 @@ function matches(filter: string, t: Task, meId: string, today: string): boolean 
   switch (filter) {
     case "mine":
       return t.ownerIds.includes(meId) || t.contributorIds.includes(meId);
+    case "private":
+      return t.private;
     case "high":
       return t.priority === "high";
     case "blocked":
@@ -192,7 +195,8 @@ export function BoardScreen({
           Now <b>{nowCount}</b> of {NOW_CAP}
         </span>
         <div className="chips" role="group" aria-label="Show">
-          {FILTERS.map((f) => {
+          {/* The Company team never sees a Private Task (ADR 0010), so they get no Private chip. */}
+          {FILTERS.filter((f) => !(isCompanyTeam && f.id === "private")).map((f) => {
             const n = tasks.filter((t) => matches(f.id, t, meId, today)).length;
             return (
               <Link
