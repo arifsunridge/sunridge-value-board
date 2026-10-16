@@ -531,6 +531,14 @@ describe("Private Tasks (ADR 0010)", () => {
     await expectError(board.setPrivate(jordan, "t-2", true), "not_allowed");
   });
 
+  it("lists Private Tasks apart in the Summary, for the people on them only", async () => {
+    const mine = await board.summary(arif, "c-sunridge");
+    expect(mine.private.map((t) => t.id)).toEqual(["t-10"]);
+    const everyone = [...mine.attention, ...mine.overdue, ...mine.rest, ...mine.changes.map((c) => c.task)].map((t) => t.id);
+    expect(everyone).not.toContain("t-10");
+    expect((await board.summary(jack, "c-sunridge")).private).toEqual([]);
+  });
+
   it("leaves Private Tasks out of the Now cap, and refuses opening one into a full Now", async () => {
     const mine = await board.createTask(arif, newTask({ title: "Draft my own plan", status: "now", private: true }));
     for (const title of NOW_FILLERS) await board.createTask(arif, newTask({ title, status: "now" }));

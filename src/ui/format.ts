@@ -21,6 +21,20 @@ export function peopleNames(ids: string[], members: Person[]): string {
   return new People(members).names(ids).join(", ");
 }
 
+/**
+ * Short names for a card: first names, or first name and last initial where two of these share
+ * a first name. The full names go in the card's title and for screen readers.
+ */
+export function shortNames(names: string[]): string[] {
+  const first = (n: string) => n.trim().split(/\s+/)[0] ?? n;
+  return names.map((n) => {
+    const f = first(n);
+    const parts = n.trim().split(/\s+/);
+    const clash = names.some((o) => o !== n && first(o) === f);
+    return clash && parts.length > 1 ? `${f} ${parts[parts.length - 1]![0]}.` : f;
+  });
+}
+
 /** Every Owner of a Task as a name: People on the board, then names typed for anyone else. */
 export function ownerNames(task: Pick<Task, "ownerIds" | "ownerNames">, members: Person[]): string[] {
   return new People(members).ownerNames(task);

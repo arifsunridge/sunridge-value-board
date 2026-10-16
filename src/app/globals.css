@@ -484,8 +484,30 @@ fieldset {
 .co-head h2 em {
   font-size: 18px;
 }
-.co-head .chips {
+.co-head .stat {
   margin-left: auto;
+}
+/* The board's filters: one labelled row under the heading, scrolling sideways on a phone. */
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 8px 0;
+  border-top: var(--rule);
+  border-bottom: var(--rule);
+  overflow-x: auto;
+}
+.filters-l {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--grey);
+  flex: none;
+}
+.filters .chips {
+  flex-wrap: nowrap;
 }
 .seg {
   display: inline-flex;
@@ -699,39 +721,54 @@ fieldset {
   color: var(--grey);
   flex-wrap: wrap;
 }
-.card .m .r {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
 .card .late {
   color: var(--high);
   font-weight: 600;
 }
-.av {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 20px;
-  padding: 0 3px;
-  background: var(--olive);
-  color: var(--white);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
+/* A card's people, in a ruled strip at its foot: Owners by short name, typed names dashed, the company owner last (ADR 0009). */
+.card .card-owners {
+  /* Inline boxes, not flex: a flex row inside a <button> is sized as if every chip wrapped. */
+  display: block;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  line-height: 0;
 }
-/* An Owner typed by name, not on the board; and the company owner (ADR 0009). */
-.av.named {
+.card .card-owners > * {
+  margin: 0 4px 4px 0;
+  vertical-align: top;
+}
+.card .card-owners .need {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 18px;
+}
+.pp {
+  display: inline-block;
+  border: 1px solid var(--rule-colour);
   background: var(--white);
-  color: var(--olive);
-  border: 1px solid var(--olive);
-}
-.av.company {
-  background: var(--sage-light);
   color: var(--olive-dark);
-  border: 1px solid var(--sage);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  padding: 0 6px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pp.me {
+  background: var(--olive);
+  border-color: var(--olive);
+  color: var(--white);
+}
+.pp.named {
+  border-style: dashed;
+}
+.pp.company {
+  background: var(--sage-light);
+  border-color: var(--sage);
+  font-weight: 500;
 }
 .card .need {
   color: var(--gold-ink);
@@ -740,6 +777,10 @@ fieldset {
 /* The Project a Task is part of (ADR 0008). */
 .ptag {
   display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
   font-size: 10.5px;
   line-height: 14px;
   letter-spacing: 0.8px;
@@ -962,25 +1003,231 @@ dialog::backdrop {
 section {
   margin-bottom: 20px;
 }
-.sumgrid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px 28px;
-  margin-top: 18px;
-}
-.sumgrid section {
-  min-width: 0;
-  margin: 0;
-}
-.sumgrid h2 {
-  font-size: 18px;
-}
 .list li.priority-high {
   border-left-color: var(--high);
 }
-@media (max-width: 980px) {
-  .sumgrid {
-    grid-template-columns: 1fr;
+
+/* ---------- reading views: tiles, boxes and task rows (Summary, My Tasks, a Project) ---------- */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 20px 0 24px;
+}
+/* A reading view's own heading (My Tasks), clear of the menu above it. */
+.page-head {
+  padding: 26px 0 0;
+}
+.page-head h1 {
+  font-size: 26px;
+  line-height: 32px;
+  margin: 0 0 6px;
+}
+.page-head p {
+  margin: 0;
+}
+.tile {
+  display: block;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--olive);
+  background: var(--white);
+  padding: 10px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+a.tile:hover {
+  border-color: var(--rule-colour);
+  border-top-color: var(--olive);
+}
+.tile b {
+  display: block;
+  font: 400 28px/34px var(--title);
+  color: var(--olive-dark);
+}
+.tile span {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--grey);
+}
+.tile.alert {
+  border-top-color: var(--high);
+}
+.tile.alert b {
+  color: var(--high);
+}
+.sbox {
+  border: 1px solid var(--line);
+  background: var(--white);
+  margin: 0 0 18px;
+}
+.sbox-h {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 9px 14px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+details.sbox:not([open]) > .sbox-h {
+  border-bottom: 0;
+}
+summary.sbox-h {
+  cursor: pointer;
+  list-style: none;
+}
+summary.sbox-h::-webkit-details-marker {
+  display: none;
+}
+details.sbox[open] > .sbox-h .hint {
+  visibility: hidden;
+}
+.sbox-h h2 {
+  font: 400 18px/24px var(--title);
+  color: var(--olive-dark);
+  margin: 0;
+}
+.sbox-h .count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--olive-dark);
+  border: 1px solid var(--rule-colour);
+  background: var(--white);
+  padding: 0 7px;
+  line-height: 18px;
+}
+.sbox-h .hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--grey);
+}
+.tl-empty {
+  margin: 0;
+  padding: 12px 14px;
+}
+.tl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.tl th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--grey);
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.tl th:nth-child(2) {
+  width: 90px;
+}
+.tl th:nth-child(3) {
+  width: 190px;
+}
+.tl th:nth-child(4) {
+  width: 110px;
+}
+.tl td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.tl tbody tr:last-child td {
+  border-bottom: 0;
+}
+.tl td.tl-task {
+  border-left: 4px solid var(--p, var(--sage-light));
+  overflow-wrap: anywhere;
+}
+.tl .tl-task a {
+  font-weight: 600;
+}
+.tl .private-mark {
+  margin-left: 6px;
+}
+.tl .meta {
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--grey);
+  margin-top: 2px;
+}
+.tl .meta.wait {
+  color: var(--olive-dark);
+}
+.tl .meta.note {
+  color: var(--gold-ink);
+}
+.tl-status {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--olive-dark);
+}
+.tl-status.s-blocked {
+  color: var(--high);
+}
+.tl-status.s-done {
+  color: var(--grey);
+}
+.tl-owners {
+  font-size: 13px;
+  line-height: 19px;
+}
+.tl-owners .need {
+  color: var(--gold-ink);
+  font-weight: 600;
+}
+.tl-company {
+  color: var(--grey);
+}
+.tl-company::after {
+  content: " (company)";
+}
+.tl-due {
+  font-size: 13px;
+  white-space: nowrap;
+}
+.tl-due.late {
+  color: var(--high);
+  font-weight: 600;
+}
+@media (max-width: 700px) {
+  .tl thead {
+    display: none;
+  }
+  .tl tr {
+    display: flex;
+    flex-wrap: wrap;
+    border-left: 4px solid var(--p, var(--sage-light));
+    border-bottom: 1px solid var(--line);
+  }
+  .tl tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .tl td {
+    border: 0;
+    padding: 4px 12px;
+  }
+  .tl td.tl-task {
+    flex-basis: 100%;
+    border-left: 0;
+    padding-top: 9px;
+  }
+  .tl td:last-child {
+    padding-bottom: 9px;
+  }
+  .tl td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--grey);
   }
 }
 
@@ -1002,9 +1249,6 @@ section {
   font-size: 11px;
   line-height: 16px;
   vertical-align: 1px;
-}
-.list .private-mark {
-  margin-left: 6px;
 }
 
 label.check {

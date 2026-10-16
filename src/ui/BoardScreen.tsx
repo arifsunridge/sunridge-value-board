@@ -17,7 +17,6 @@ import { moveTask } from "@/app/actions";
 import { isOverdue, type BoardView } from "@/board/board";
 import {
   NOW_CAP,
-  initials,
   DEPARTMENTS,
   canBeShared,
   hasOwner,
@@ -31,7 +30,7 @@ import {
   type Task,
 } from "@/board/model";
 import { CompanyHead } from "./CompanyViews";
-import { formatDay, ownerNames } from "./format";
+import { formatDay, ownerNames, shortNames } from "./format";
 import { PrivateMark } from "./PrivateMark";
 
 const FILTERS = [
@@ -99,6 +98,7 @@ export function BoardScreen({
   today,
   filter,
   showEmpty,
+  showProjects,
 }: {
   view: BoardView;
   members: Person[];
@@ -109,6 +109,8 @@ export function BoardScreen({
   filter: string;
   /** Show Departments and Areas with no Tasks, for dragging a Task into one. */
   showEmpty: boolean;
+  /** Show each card's Project above its title. */
+  showProjects: boolean;
 }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -194,7 +196,13 @@ export function BoardScreen({
         <span className={`stat${nowCount >= NOW_CAP ? " bad" : ""}`}>
           Now <b>{nowCount}</b> of {NOW_CAP}
         </span>
-        <div className="chips" role="group" aria-label="Show">
+      </CompanyHead>
+
+      <div className="filters">
+        <span className="filters-l" id="filters-l">
+          Show
+        </span>
+        <div className="chips" role="group" aria-labelledby="filters-l">
           {/* The Company team never sees a Private Task (ADR 0010), so they get no Private chip. */}
           {FILTERS.filter((f) => !(isCompanyTeam && f.id === "private")).map((f) => {
             const n = tasks.filter((t) => matches(f.id, t, meId, today)).length;
@@ -211,7 +219,7 @@ export function BoardScreen({
             );
           })}
         </div>
-      </CompanyHead>
+      </div>
 
       <div className="toolbar">
         {isCompanyTeam ? (
@@ -222,6 +230,14 @@ export function BoardScreen({
           </Link>
         )}
         <span className="spacer" />
+        {view.projects.length > 0 && (
+          <Link className="toggle" href={hrefWith("projects", showProjects ? "0" : null)} scroll={false} aria-pressed={showProjects}>
+            <span className="box" aria-hidden="true">
+              {showProjects ? "✓" : ""}
+            </span>
+            Show Projects
+          </Link>
+        )}
         <Link className="toggle" href={hrefWith("empty", showEmpty ? null : "1")} scroll={false} aria-pressed={showEmpty}>
           <span className="box" aria-hidden="true">
             {showEmpty ? "✓" : ""}
@@ -282,6 +298,8 @@ export function BoardScreen({
               documentCounts={view.documentCounts}
               editable={editable}
               projectNames={projectNames}
+              showProjects={showProjects}
+              companyName={view.company.name}
               onOpen={open}
             />
           ))}
@@ -370,6 +388,9 @@ interface CardContext {
   /** The Tasks the signed-in Person may change (ADR 0009). */
   editable: Set<string>;
   projectNames: Record<string, string>;
+  /** Shown on each card above its title; the toolbar can hide them. */
+  showProjects: boolean;
+  companyName: string;
   onOpen: (taskId: string) => void;
 }
 
@@ -395,7 +416,7 @@ function Cell({ id, status, label, tasks, ...card }: { id: string; status: Statu
   );
 }
 
-function Card({ task, members, showShared, today, documentCounts, editable: mayChange, projectNames, onOpen }: { task: Task } & CardContext) {
+function Card({ task, members, meId, companyName, showShared, showProjects, today, documentCounts, editable: mayChange, projectNames, onOpen }: { task: Task } & CardContext) {
   const editable = mayChange.has(task.id);
   const owners = ownerNames(task, members);
   const project = task.projectId ? projectNames[task.projectId] : undefined;
@@ -425,7 +446,11 @@ function Card({ task, members, showShared, today, documentCounts, editable: mayC
         : {})}
     >
       <span className="sr-only">{PRIORITY_LABELS[task.priority]} priority. </span>
-      {project && <span className="ptag">{project}</span>}
+      {showProjects && project && (
+        <span className="ptag" title={`Project: ${project}`}>
+          {project}
+        </span>
+      )}
       <span className="t">{task.title}</span>
       {task.status === "blocked" && task.note && <span className="w">{task.note}</span>}
       <span className="m">
@@ -446,27 +471,37 @@ function Card({ task, members, showShared, today, documentCounts, editable: mayC
             <span className="sr-only">Has Documents</span>
           </span>
         ) : null}
-        <span className="r" title={[...owners, ...(task.companyOwner ? [task.companyOwner] : [])].join(", ") || "Needs an owner"}>
-          <span className="sr-only">{owners.length ? `Owners: ${owners.join(", ")}` : "Needs an owner"}</span>
-          {owners.length === 0 && task.status !== "done" && <span className="need">Needs an owner</span>}
-          {task.ownerIds.map((oid) => (
-            <span key={oid} className="av" aria-hidden="true">
-              {initials(members.find((m) => m.id === oid)?.name ?? "?")}
-            </span>
-          ))}
-          {task.ownerNames.map((name) => (
-            <span key={name} className="av named" aria-hidden="true">
-              {initials(name)}
-            </span>
-          ))}
-          {task.companyOwner && (
-            <span className="av company" aria-hidden="true">
-              {initials(task.companyOwner)}
-            </span>
-          )}
-        </span>
       </span>
+      <Owners task={task} owners={owners} me={members.find((m) => m.id === meId)?.name} companyName={companyName} />
     </button>
+  );
+}
+
+/**
+ * A card's people, at its foot in a ruled strip: each Owner by short name, typed names dashed,
+ * and the company owner last, labelled with the Company. Full names in the title and for screen readers.
+ */
+function Owners({ task, owners, me, companyName }: { task: Task; owners: string[]; me?: string; companyName: string }) {
+  if (!owners.length && !task.companyOwner && task.status === "done") return null;
+  const typed = new Set(task.ownerNames);
+  const short = shortNames(owners);
+  const full = [...owners, ...(task.companyOwner ? [`${task.companyOwner} (${companyName})`] : [])].join(", ");
+  return (
+    <span className="card-owners" title={full || "Needs an owner"}>
+      <span className="sr-only">{owners.length ? `Owners: ${owners.join(", ")}. ` : "Needs an owner. "}</span>
+      {task.companyOwner && <span className="sr-only">{`${companyName} owner: ${task.companyOwner}.`}</span>}
+      {!owners.length && <span className="need">Needs an owner</span>}
+      {owners.map((name, i) => (
+        <span key={name} className={`pp${typed.has(name) ? " named" : ""}${name === me ? " me" : ""}`} aria-hidden="true">
+          {short[i]}
+        </span>
+      ))}
+      {task.companyOwner && (
+        <span className="pp company" aria-hidden="true">
+          {companyName} · {shortNames([task.companyOwner])[0]}
+        </span>
+      )}
+    </span>
   );
 }
 

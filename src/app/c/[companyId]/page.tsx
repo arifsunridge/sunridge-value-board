@@ -10,10 +10,10 @@ export default async function CompanyBoard({
   searchParams,
 }: {
   params: Promise<{ companyId: string }>;
-  searchParams: Promise<{ task?: string; filter?: string; empty?: string }>;
+  searchParams: Promise<{ task?: string; filter?: string; empty?: string; projects?: string }>;
 }) {
   const { companyId } = await params;
-  const { task: taskId, filter, empty } = await searchParams;
+  const { task: taskId, filter, empty, projects } = await searchParams;
   const me = await requirePerson(`/c/${companyId}`);
   const isCompanyTeam = me.kind === "company";
   const b = board();
@@ -52,6 +52,7 @@ export default async function CompanyBoard({
         today={b.today()}
         filter={filter ?? "all"}
         showEmpty={empty === "1"}
+        showProjects={projects !== "0"}
       />
       {panel && (
         <TaskPanel

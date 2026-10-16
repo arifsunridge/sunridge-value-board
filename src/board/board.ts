@@ -155,6 +155,8 @@ export interface Summary {
   overdue: Task[];
   changes: SummaryChange[];
   rest: Task[];
+  /** The asker's own open Private Tasks (ADR 0010), kept apart so the rest reads the same for every Member. */
+  private: Task[];
 }
 
 const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
@@ -327,7 +329,10 @@ export class Board {
     return tasks.filter((t) => t.removed && canSee(me, t)).sort(compareTasks);
   }
 
-  /** The Partner view: what needs attention, what's late, and what changed in the last week. */
+  /**
+   * The Partner view: what needs attention, what's late, and what changed in the last week. Private
+   * Tasks are listed on their own, for the people on them only (ADR 0010).
+   */
   async summary(who: Reader, companyId: string, days = 7): Promise<Summary> {
     const me = await this.person(who);
     const company = await this.company(who, companyId);
@@ -337,7 +342,8 @@ export class Board {
       this.store.listTasks({ companyId }),
       this.store.listTrail({ companyId, since }),
     ]);
-    const tasks = all.filter((t) => !t.removed && canSee(me, t)).sort(compareTasks);
+    const visible = all.filter((t) => !t.removed && canSee(me, t)).sort(compareTasks);
+    const tasks = visible.filter((t) => !t.private);
     const seen = new Set(tasks.map((t) => t.id));
     const open = tasks.filter(isOpen);
     const attention = open.filter((t) => t.priority === "high" || t.status === "blocked");
@@ -357,7 +363,14 @@ export class Board {
       .map((task) => ({ task, events: byTask.get(task.id)! }));
 
     const shown = new Set([...attention, ...overdue].map((t) => t.id));
-    return { company, attention, overdue, changes, rest: open.filter((t) => !shown.has(t.id)) };
+    return {
+      company,
+      attention,
+      overdue,
+      changes,
+      rest: open.filter((t) => !shown.has(t.id)),
+      private: visible.filter((t) => t.private && isOpen(t)),
+    };
   }
 
   // ---------- Tasks ----------
