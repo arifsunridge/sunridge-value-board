@@ -38,7 +38,8 @@ describe("who the HBF Portal's answer makes a Person (ADR 0005, 0006)", () => {
     expect(personFromDirectory({ email: "New@Example.com", name: null, audience: "sunridge", role: "Sunridge team" }, "hbf")).toEqual({
       id: "new@example.com",
       email: "new@example.com",
-      name: "new@example.com",
+      // The Portal had no name for them: the board makes one from the email rather than show it.
+      name: "New",
       kind: "member",
       companyId: null,
       signedInAt: null,

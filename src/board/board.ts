@@ -32,7 +32,7 @@ import {
   type TrailEntry,
   type Via,
 } from "./model";
-import { People } from "./people";
+import { People, nameFromEmail } from "./people";
 import { BoardError, cleanDue, cleanName, cleanNote, cleanTitle, cleanUrl } from "./rules";
 import type { Store } from "@/store/store";
 
@@ -730,8 +730,11 @@ export class Board {
   // ---------- People ----------
 
   /** Called on every sign-in, from what the HBF Portal verified, so the list of people stays current. */
-  async recordPerson(person: Person): Promise<void> {
-    const existing = (await this.store.listPeople()).find((p) => p.id === person.id);
+  async recordPerson(signingIn: Person): Promise<void> {
+    const existing = (await this.store.listPeople()).find((p) => p.id === signingIn.id);
+    // Sign-in often carries no name, only the email: keep the name the Portal's list gave them.
+    const nameless = !signingIn.name.trim() || signingIn.name.includes("@") || signingIn.name === nameFromEmail(signingIn.email);
+    const person = existing && nameless ? { ...signingIn, name: existing.name } : signingIn;
     const signedInAt = existing?.signedInAt ?? person.signedInAt ?? this.clock().toISOString();
     if (!existing || changedPerson(existing, person) || existing.signedInAt !== signedInAt) {
       await this.store.putPerson({ ...person, signedInAt });

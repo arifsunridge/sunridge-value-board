@@ -29,6 +29,7 @@ import {
   type Status,
   type Task,
 } from "@/board/model";
+import { People } from "@/board/people";
 import { CompanyHead } from "./CompanyViews";
 import { formatDay, ownerNames, shortNames } from "./format";
 import { PrivateMark } from "./PrivateMark";
@@ -472,33 +473,41 @@ function Card({ task, members, meId, companyName, showShared, showProjects, toda
           </span>
         ) : null}
       </span>
-      <Owners task={task} owners={owners} me={members.find((m) => m.id === meId)?.name} companyName={companyName} />
+      <Owners task={task} owners={owners} members={members} meId={meId} companyName={companyName} />
     </button>
   );
 }
 
 /**
- * A card's people, at its foot in a ruled strip: each Owner by short name, typed names dashed,
- * and the company owner last, labelled with the Company. Full names in the title and for screen readers.
+ * A card's people, at its foot in a ruled strip, by side: "Sunridge · Arif, Theran", names typed
+ * for anyone else (dashed), then "HBF · Tom" for the company's people and its owner. First names
+ * only; the full names are in the title and for screen readers.
  */
-function Owners({ task, owners, me, companyName }: { task: Task; owners: string[]; me?: string; companyName: string }) {
+function Owners({ task, owners, members, meId, companyName }: { task: Task; owners: string[]; members: Person[]; meId: string; companyName: string }) {
   if (!owners.length && !task.companyOwner && task.status === "done") return null;
-  const typed = new Set(task.ownerNames);
-  const short = shortNames(owners);
+  const people = new People(members);
+  const companyPeople = task.ownerIds.filter((id) => people.get(id)?.kind === "company");
+  const sunridge = people.names(task.ownerIds.filter((id) => !companyPeople.includes(id)));
+  const company = [...people.names(companyPeople), ...(task.companyOwner ? [task.companyOwner] : [])];
   const full = [...owners, ...(task.companyOwner ? [`${task.companyOwner} (${companyName})`] : [])].join(", ");
   return (
     <span className="card-owners" title={full || "Needs an owner"}>
       <span className="sr-only">{owners.length ? `Owners: ${owners.join(", ")}. ` : "Needs an owner. "}</span>
       {task.companyOwner && <span className="sr-only">{`${companyName} owner: ${task.companyOwner}.`}</span>}
       {!owners.length && <span className="need">Needs an owner</span>}
-      {owners.map((name, i) => (
-        <span key={name} className={`pp${typed.has(name) ? " named" : ""}${name === me ? " me" : ""}`} aria-hidden="true">
-          {short[i]}
+      {sunridge.length > 0 && (
+        <span className={`pp${task.ownerIds.includes(meId) ? " me" : ""}`} aria-hidden="true">
+          Sunridge · {shortNames(sunridge).join(", ")}
+        </span>
+      )}
+      {shortNames(task.ownerNames).map((name, i) => (
+        <span key={`${name}-${i}`} className="pp named" aria-hidden="true">
+          {name}
         </span>
       ))}
-      {task.companyOwner && (
+      {company.length > 0 && (
         <span className="pp company" aria-hidden="true">
-          {companyName} · {shortNames([task.companyOwner])[0]}
+          {companyName} · {shortNames(company).join(", ")}
         </span>
       )}
     </span>

@@ -187,6 +187,17 @@ describe("who can change a Task", () => {
     await expectError(board.updateTask(hugues, theirs.id, { due: "2026-11-03" }), "not_allowed");
   });
 
+  it("keeps a Person's name when sign-in brings only their email", async () => {
+    const colleague = { id: "new@example.com", email: "new@example.com", name: "New Example", kind: "member" as const, companyId: null, signedInAt: null };
+    await board.recordDirectory([colleague]);
+    await board.recordPerson({ ...colleague, name: "new@example.com" });
+    await board.recordPerson({ ...colleague, name: "New" });
+    expect((await board.people(arif)).find((p) => p.id === colleague.id)?.name).toBe("New Example");
+    // A real name from sign-in still replaces the old one.
+    await board.recordPerson({ ...colleague, name: "Newer Example" });
+    expect((await board.people(arif)).find((p) => p.id === colleague.id)?.name).toBe("Newer Example");
+  });
+
   it("never lets the HBF team change a Task just because its Owners haven't signed in", async () => {
     const named = await board.createTask(arif, newTask({ ownerIds: [], ownerNames: ["Example Colleague"], shared: true }));
     await expectError(board.updateTask({ memberId: "h-jordan", via: "screen" }, named.id, { due: "2026-11-02" }), "not_allowed");

@@ -4,6 +4,19 @@ import { BoardError } from "./rules";
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? "";
 
+/** A name made from an email's first part: "arif.bayrak@…" is "Arif Bayrak". */
+export function nameFromEmail(email: string): string {
+  const local = email.trim().split("@")[0] ?? "";
+  const words = local.split(/[._+-]+/).filter(Boolean);
+  return words.map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase()).join(" ") || email.trim();
+}
+
+/** A Person's name for people to read: never an email, since sign-in may give the board no name. */
+export function displayName(name: string, email = name): string {
+  const clean = name.trim();
+  return !clean || clean.includes("@") ? nameFromEmail(clean || email) : clean;
+}
+
 /**
  * The people on the board, and the one place that turns what someone says ("me", an email, a
  * name) into a Person, and a Task's Owners into names. The screens, Claude and the sync use it,
@@ -28,9 +41,9 @@ export class People {
   find(input: string): Person | undefined {
     const text = input.trim();
     if (!text) return undefined;
-    const exact = this.all.find((p) => p.id === text || same(p.email, text) || same(p.name, text));
+    const exact = this.all.find((p) => p.id === text || same(p.email, text) || same(p.name, text) || same(this.name(p.id), text));
     if (exact) return exact;
-    const byFirst = this.all.filter((p) => same(firstName(p.name), text));
+    const byFirst = this.all.filter((p) => same(firstName(this.name(p.id)), text));
     return byFirst.length === 1 ? byFirst[0] : undefined;
   }
 
@@ -39,8 +52,8 @@ export class People {
     if (same(input, "me")) return meId;
     const found = this.find(input);
     if (found) return found.id;
-    const names = this.all.map((p) => p.name).join(", ");
-    const several = this.all.filter((p) => same(firstName(p.name), input)).length > 1;
+    const names = this.all.map((p) => this.name(p.id)).join(", ");
+    const several = this.all.filter((p) => same(firstName(this.name(p.id)), input)).length > 1;
     throw new BoardError(
       "not_found",
       several ? `"${input}" matches more than one person. Use a full name: ${names}.` : `"${input}" isn't on the board. People: ${names}.`,
@@ -58,7 +71,7 @@ export class People {
       const name = raw.trim().replace(/\s+/g, " ");
       if (!name) continue;
       if (name.length > OWNER_NAME_MAX_CHARS) throw new BoardError("invalid", `Keep each Owner's name to ${OWNER_NAME_MAX_CHARS} characters or fewer.`);
-      const person = this.all.find((p) => same(p.name, name) || same(p.email, name));
+      const person = this.all.find((p) => same(p.name, name) || same(this.name(p.id), name) || same(p.email, name));
       if (person) {
         if (!ownerIds.includes(person.id)) ownerIds.push(person.id);
       } else if (!ownerNames.some((n) => same(n, name))) {
@@ -70,7 +83,8 @@ export class People {
   }
 
   name(id: string): string {
-    return this.byId.get(id)?.name ?? "Former member";
+    const person = this.byId.get(id);
+    return person ? displayName(person.name, person.email) : "Former member";
   }
 
   names(ids: string[]): string[] {
