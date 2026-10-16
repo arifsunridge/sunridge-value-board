@@ -513,6 +513,14 @@ fieldset {
 .filters .chips {
   flex-wrap: nowrap;
 }
+/* Whose Tasks: anyone's, or one person's, by name. */
+.filters .owner-pick {
+  flex: none;
+  width: auto;
+  min-width: 170px;
+  padding: 3px 8px;
+  font-size: 13px;
+}
 .seg {
   display: inline-flex;
   border: 1px solid var(--rule-colour);

@@ -140,3 +140,50 @@ export function describe(entry: TrailEntry, members: Person[], names: Record<str
       return `${who} changed the ${FIELD_LABELS[entry.field ?? ""] ?? entry.field} from ${v(entry.old)} to ${v(entry.new)}${via}`;
   }
 }
+
+/**
+ * Whose Tasks the board shows: `p:<id>` a Person who owns or contributes, `n:<name>` a name typed
+ * as an Owner, `c:<name>` the company owner. Anything else is anyone.
+ */
+export function ownerMatches(owner: string | undefined, task: Pick<Task, "ownerIds" | "contributorIds" | "ownerNames" | "companyOwner">): boolean {
+  const kind = owner?.slice(0, 2);
+  const value = owner?.slice(2) ?? "";
+  const same = (a: string) => a.trim().toLowerCase() === value.trim().toLowerCase();
+  if (kind === "p:") return task.ownerIds.includes(value) || task.contributorIds.includes(value);
+  if (kind === "n:") return task.ownerNames.some(same);
+  if (kind === "c:") return same(task.companyOwner ?? "");
+  return true;
+}
+
+export interface OwnerOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+/** The people the board's Owner picker offers, from the Tasks on it: Sunridge, the company's people and owners, and typed names. */
+export function ownerOptions(
+  tasks: Pick<Task, "ownerIds" | "contributorIds" | "ownerNames" | "companyOwner">[],
+  members: Person[],
+): { sunridge: OwnerOption[]; company: OwnerOption[]; others: OwnerOption[] } {
+  const people = new People(members);
+  const counts = new Map<string, number>();
+  const add = (value: string) => counts.set(value, (counts.get(value) ?? 0) + 1);
+  for (const t of tasks) {
+    new Set([...t.ownerIds, ...t.contributorIds]).forEach((id) => add(`p:${id}`));
+    new Set(t.ownerNames.map((n) => n.trim())).forEach((n) => add(`n:${n}`));
+    if (t.companyOwner?.trim()) add(`c:${t.companyOwner.trim()}`);
+  }
+  const sunridge: OwnerOption[] = [];
+  const company: OwnerOption[] = [];
+  const others: OwnerOption[] = [];
+  for (const [value, count] of counts) {
+    const kind = value.slice(0, 2);
+    const rest = value.slice(2);
+    if (kind === "p:") (people.get(rest)?.kind === "company" ? company : sunridge).push({ value, label: people.name(rest), count });
+    else if (kind === "c:") company.push({ value, label: rest, count });
+    else others.push({ value, label: rest, count });
+  }
+  const byLabel = (a: OwnerOption, b: OwnerOption) => a.label.localeCompare(b.label);
+  return { sunridge: sunridge.sort(byLabel), company: company.sort(byLabel), others: others.sort(byLabel) };
+}
