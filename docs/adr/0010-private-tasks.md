@@ -16,6 +16,7 @@ Every Member saw every Task of every Company. Arif asked on 16 October 2026 for 
 - **Nobody joins their way in.** "Join as a Contributor" works only on a Task you can already see.
 - **Private Tasks don't count towards Now.** Each Company still has at most ten Tasks in Now, not counting Private ones. Otherwise a colleague could be refused a place by a Task they can't see or move. Opening a Private Task that is in Now needs a free place.
 - **The sync leaves Private Tasks on the board.** They never go to the team board, even the syncing Member's own. A Task that reached the team board before it was made Private is marked removed there, and nothing from the team board changes it. Opening it again puts it back on the team board. The board gives the sync the ids of every Private Task, and only the ids, so this works even when the syncing Member isn't on the Task.
+- **The Summary lists them apart.** "Your Private Tasks" is its own section, for the people on them only, and Private Tasks are left out of Needs attention, Late, Changed and the rest, so those read the same for every Member.
 - Making a Task Private, or opening it, is on its Trail. Only the Task's people can read that Trail.
 
 ## Considered options

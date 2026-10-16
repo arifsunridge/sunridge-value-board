@@ -342,7 +342,8 @@ export function boardServer(board: Board, actor: Actor): McpServer {
     "company_summary",
     {
       title: "Company summary",
-      description: "The Partner view of one company: Blocked and High Tasks, overdue Tasks, and what changed in the last 7 days.",
+      description:
+        "The Partner view of one company: Blocked and High Tasks, overdue Tasks, and what changed in the last 7 days. The signed-in Member's own Private Tasks come separately, for them only.",
       inputSchema: { company: z.string().describe("Company name or ID.") },
       annotations: read,
     },
@@ -357,6 +358,7 @@ export function boardServer(board: Board, actor: Actor): McpServer {
           overdue: s.overdue.map((t) => l.task(t, today)),
           changed_this_week: s.changes.map((c) => ({ task: c.task.title, id: c.task.id, changes: c.events })),
           other_open_tasks: s.rest.length,
+          ...(s.private.length ? { your_private_tasks: s.private.map((t) => l.task(t, today)) } : {}),
         };
       }),
   );
