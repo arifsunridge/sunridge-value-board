@@ -11,15 +11,16 @@
 import mysql from "mysql2/promise";
 import { MysqlStore } from "@/store/mysql";
 
-const TABLES = ["vb_people", "vb_companies", "vb_areas", "vb_tasks", "vb_documents"];
+const TABLES = ["vb_people", "vb_companies", "vb_areas", "vb_tasks", "vb_projects", "vb_documents"];
 const APP_USER = "value_board";
 
-/** The board's login: full use of its working tables, but only INSERT and SELECT on the Trail. */
+/** The board's login: full use of its working tables, but only INSERT and SELECT on the Trail and on Project Updates. */
 export function grants(database: string, user = `'${APP_USER}'@'%'`): string[] {
   return [
     `GRANT CREATE ON \`${database}\`.* TO ${user}`,
     ...TABLES.map((t) => `GRANT SELECT, INSERT, UPDATE ON \`${database}\`.\`${t}\` TO ${user}`),
     `GRANT SELECT, INSERT ON \`${database}\`.\`vb_trail\` TO ${user}`,
+    `GRANT SELECT, INSERT ON \`${database}\`.\`vb_project_updates\` TO ${user}`,
   ];
 }
 
@@ -35,6 +36,7 @@ async function main() {
   await admin.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
 
   const store = MysqlStore.connect({ ...server, database });
+  // init() creates missing tables and adds the columns later releases need (MIGRATIONS), as this admin login.
   await store.init();
   await store.close();
   console.log(`Tables ready in ${database}.`);

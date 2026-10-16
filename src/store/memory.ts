@@ -1,4 +1,4 @@
-import type { Area, Company, Document, Person, Task, TrailEntry } from "@/board/model";
+import type { Area, Company, Document, Person, Project, ProjectUpdate, Task, TrailEntry } from "@/board/model";
 import type { Store } from "./store";
 
 const copy = <T>(value: T): T => structuredClone(value);
@@ -8,6 +8,8 @@ export interface Seed {
   companies?: Company[];
   areas?: Area[];
   tasks?: Task[];
+  projects?: Project[];
+  projectUpdates?: ProjectUpdate[];
   documents?: Document[];
   trail?: TrailEntry[];
 }
@@ -18,6 +20,8 @@ export class MemoryStore implements Store {
   private companies = new Map<string, Company>();
   private areas = new Map<string, Area>();
   private tasks = new Map<string, Task>();
+  private projects = new Map<string, Project>();
+  private projectUpdates: ProjectUpdate[] = [];
   private documents = new Map<string, Document>();
   private trail: TrailEntry[] = [];
 
@@ -26,6 +30,8 @@ export class MemoryStore implements Store {
     seed.companies?.forEach((c) => this.companies.set(c.id, copy(c)));
     seed.areas?.forEach((a) => this.areas.set(a.id, copy(a)));
     seed.tasks?.forEach((t) => this.tasks.set(t.id, copy(t)));
+    seed.projects?.forEach((p) => this.projects.set(p.id, copy(p)));
+    this.projectUpdates = copy(seed.projectUpdates ?? []);
     seed.documents?.forEach((d) => this.documents.set(d.id, copy(d)));
     this.trail = copy(seed.trail ?? []);
   }
@@ -63,6 +69,27 @@ export class MemoryStore implements Store {
   }
   async putTask(task: Task) {
     this.tasks.set(task.id, copy(task));
+  }
+
+  async listProjects(filter: { companyId?: string }) {
+    return [...this.projects.values()].filter((p) => !filter.companyId || p.companyId === filter.companyId).map(copy);
+  }
+  async getProject(id: string) {
+    const project = this.projects.get(id);
+    return project ? copy(project) : null;
+  }
+  async putProject(project: Project) {
+    this.projects.set(project.id, copy(project));
+  }
+
+  async appendProjectUpdates(updates: ProjectUpdate[]) {
+    this.projectUpdates.push(...updates.map(copy));
+  }
+  async listProjectUpdates(filter: { projectId?: string; companyId?: string }) {
+    return this.projectUpdates
+      .filter((u) => !filter.projectId || u.projectId === filter.projectId)
+      .filter((u) => !filter.companyId || u.companyId === filter.companyId)
+      .map(copy);
   }
 
   async listDocuments(filter: { taskIds: string[] }) {

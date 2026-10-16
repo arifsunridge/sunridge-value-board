@@ -14,12 +14,13 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useOptimistic, useRef, useState, useTransition } from "react";
 import { moveTask } from "@/app/actions";
-import { canEdit, isOverdue, type BoardView } from "@/board/board";
+import { isOverdue, type BoardView } from "@/board/board";
 import {
   NOW_CAP,
   initials,
   DEPARTMENTS,
   canBeShared,
+  hasOwner,
   PRIORITY_LABELS,
   STATUSES,
   STATUS_LABELS,
@@ -30,7 +31,7 @@ import {
   type Task,
 } from "@/board/model";
 import { CompanyHead } from "./CompanyViews";
-import { formatDay, peopleNames } from "./format";
+import { formatDay, ownerNames } from "./format";
 
 const FILTERS = [
   { id: "all", label: "Everything" },
@@ -39,6 +40,7 @@ const FILTERS = [
   { id: "blocked", label: "Blocked" },
   { id: "overdue", label: "Late", alert: true },
   { id: "nodate", label: "No date" },
+  { id: "noowner", label: "Needs an owner", alert: true },
 ] as const;
 
 function matches(filter: string, t: Task, meId: string, today: string): boolean {
@@ -53,6 +55,8 @@ function matches(filter: string, t: Task, meId: string, today: string): boolean 
       return isOverdue(t, today);
     case "nodate":
       return t.status !== "done" && !t.due;
+    case "noowner":
+      return t.status !== "done" && !hasOwner(t);
     default:
       return true;
   }
@@ -176,6 +180,8 @@ export function BoardScreen({
   const nowCount = tasks.filter((t) => t.status === "now").length;
   const departments = DEPARTMENTS.filter((d) => !isCompanyTeam || canBeShared(d.id));
   const nothingShown = !departments.some((d) => visible.some((t) => t.departmentId === d.id));
+  const editable = new Set(view.editable);
+  const projectNames = Object.fromEntries(view.projects.map((p) => [p.project.id, p.project.name]));
 
   return (
     <section className="company">
@@ -268,6 +274,8 @@ export function BoardScreen({
               showShared={!isCompanyTeam && view.company.kind === "portfolio"}
               today={today}
               documentCounts={view.documentCounts}
+              editable={editable}
+              projectNames={projectNames}
               onOpen={open}
             />
           ))}
@@ -353,6 +361,9 @@ interface CardContext {
   showShared: boolean;
   today: string;
   documentCounts: Record<string, number>;
+  /** The Tasks the signed-in Person may change (ADR 0009). */
+  editable: Set<string>;
+  projectNames: Record<string, string>;
   onOpen: (taskId: string) => void;
 }
 
@@ -378,8 +389,10 @@ function Cell({ id, status, label, tasks, ...card }: { id: string; status: Statu
   );
 }
 
-function Card({ task, members, meId, showShared, today, documentCounts, onOpen }: { task: Task } & CardContext) {
-  const editable = canEdit(task, meId);
+function Card({ task, members, showShared, today, documentCounts, editable: mayChange, projectNames, onOpen }: { task: Task } & CardContext) {
+  const editable = mayChange.has(task.id);
+  const owners = ownerNames(task, members);
+  const project = task.projectId ? projectNames[task.projectId] : undefined;
   const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({ id: task.id, disabled: !editable });
   const late = isOverdue(task, today);
   return (
@@ -406,6 +419,7 @@ function Card({ task, members, meId, showShared, today, documentCounts, onOpen }
         : {})}
     >
       <span className="sr-only">{PRIORITY_LABELS[task.priority]} priority. </span>
+      {project && <span className="ptag">{project}</span>}
       <span className="t">{task.title}</span>
       {task.status === "blocked" && task.note && <span className="w">{task.note}</span>}
       <span className="m">
@@ -425,13 +439,24 @@ function Card({ task, members, meId, showShared, today, documentCounts, onOpen }
             <span className="sr-only">Has Documents</span>
           </span>
         ) : null}
-        <span className="r" title={peopleNames(task.ownerIds, members)}>
-          <span className="sr-only">Owners: {peopleNames(task.ownerIds, members)}</span>
+        <span className="r" title={[...owners, ...(task.companyOwner ? [task.companyOwner] : [])].join(", ") || "Needs an owner"}>
+          <span className="sr-only">{owners.length ? `Owners: ${owners.join(", ")}` : "Needs an owner"}</span>
+          {owners.length === 0 && task.status !== "done" && <span className="need">Needs an owner</span>}
           {task.ownerIds.map((oid) => (
             <span key={oid} className="av" aria-hidden="true">
               {initials(members.find((m) => m.id === oid)?.name ?? "?")}
             </span>
           ))}
+          {task.ownerNames.map((name) => (
+            <span key={name} className="av named" aria-hidden="true">
+              {initials(name)}
+            </span>
+          ))}
+          {task.companyOwner && (
+            <span className="av company" aria-hidden="true">
+              {initials(task.companyOwner)}
+            </span>
+          )}
         </span>
       </span>
     </button>

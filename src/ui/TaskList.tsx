@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { isOverdue } from "@/board/board";
 import { PRIORITY_LABELS, STATUS_LABELS, departmentName, type Area, type Person, type Task } from "@/board/model";
-import { formatDay, peopleNames } from "./format";
+import { formatDay, ownerNames } from "./format";
 
 /** A plain list of Tasks, for reading rather than moving: the Summary and My Tasks. */
 export function TaskList({
@@ -31,7 +31,7 @@ export function TaskList({
             <Link href={`/c/${t.companyId}?task=${t.id}`}>{t.title}</Link>
             <div className="meta">
               {STATUS_LABELS[t.status]} · {departmentName(t.departmentId)}
-              {area ? ` › ${area.name}` : ""} · {peopleNames(t.ownerIds, members)}
+              {area ? ` › ${area.name}` : ""} · {ownerNames(t, members).join(", ") || "Needs an owner"}
               {t.due ? ` · ${late ? "Late, " : "Due "}${formatDay(t.due)}` : " · No date"}
             </div>
             {t.status === "blocked" && t.note && <div className="meta">Waiting on: {t.note}</div>}

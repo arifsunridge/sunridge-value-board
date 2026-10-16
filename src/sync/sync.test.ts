@@ -51,7 +51,8 @@ function snapshot(): TeamBoardSnapshot {
 /** What the routine does with the answer: write each document into the artifact. */
 function applyWrites(snap: TeamBoardSnapshot, writes: ArtifactWrite[]): void {
   for (const w of writes) {
-    snap.actions[w.doc_id] = (w.op === "set" ? w.data : { ...snap.actions[w.doc_id], ...w.data }) as unknown as TeamBoardSnapshot["actions"][string];
+    const docs = (w.collection === "groups" ? (snap.groups ??= {}) : snap.actions) as Record<string, unknown>;
+    docs[w.doc_id] = w.op === "set" ? w.data : { ...(docs[w.doc_id] as object), ...w.data };
   }
 }
 
@@ -67,7 +68,7 @@ describe("the team board sync", () => {
   async function run(snap: TeamBoardSnapshot) {
     const side = await readBoardSide(board, arif);
     const plan = planSync(snap, side, clock.toISOString());
-    const result = await applyBoardChanges(board, arif, plan, side);
+    const result = await applyBoardChanges(board, arif, plan, side, snap.config);
     applyWrites(snap, plan.artifact);
     return { plan, result };
   }
@@ -85,9 +86,9 @@ describe("the team board sync", () => {
     expect(detail.documents.map((d) => d.name)).toEqual(["Line speed analysis"]);
     expect(detail.trail[0]).toMatchObject({ action: "created", via: "sync", old: "Team board (a1)" });
 
-    // No Owner on the team board: the syncing Member owns it. The title is cut to 8 words.
+    // No Owner on the team board: none on the board either (ADR 0009). The title is cut to 8 words.
     const budget = view.tasks.find((t) => t.title.startsWith("Draft an example budget"))!;
-    expect(budget.ownerIds).toEqual(["m-arif"]);
+    expect(budget).toMatchObject({ ownerIds: [], ownerNames: [] });
     expect(budget.title.split(" ")).toHaveLength(8);
     expect(view.areas.some((a) => a.name === "Example yard")).toBe(true);
 
@@ -134,37 +135,112 @@ describe("the team board sync", () => {
     expect(snap.actions.a1).toMatchObject({ priority: "low", title: "Check sample line speeds" });
   });
 
-  it("keeps board Owners the team board can't name", async () => {
+  it("sends Owners the team board has no user for by name, and settles", async () => {
     const snap = snapshot();
     await run(snap);
     const speeds = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title === "Check sample line speeds")!;
     clock = new Date("2026-10-14T12:00:00Z");
     await board.updateTask(arif, speeds.id, { ownerIds: ["m-theran", "m-jack"] });
     clock = new Date("2026-10-14T13:00:00Z");
-    // Jack isn't on the team board, so the board's extra Owner is not a difference.
-    expect((await run(snap)).plan.artifact).toEqual([]);
-    snap.actions.a1 = { ...snap.actions.a1!, ownerIds: ["u_arif"], editedAt: "2026-10-14T13:30:00Z" };
+    // Jack has no team board user, so he goes there by name.
+    const { plan } = await run(snap);
+    expect(plan.artifact).toEqual([expect.objectContaining({ doc_id: "a1", data: expect.objectContaining({ ownerIds: ["u_theran"], ownerNames: ["Jack Example"] }) })]);
     clock = new Date("2026-10-14T14:00:00Z");
+    expect((await run(snap)).plan).toMatchObject({ board: [], artifact: [] });
+    // Someone renames the Owners on the team board: the board follows, and Jack is still Jack.
+    snap.actions.a1 = { ...snap.actions.a1!, ownerIds: ["u_arif"], editedAt: "2026-10-14T14:30:00Z" };
+    clock = new Date("2026-10-14T15:00:00Z");
     await run(snap);
-    expect((await board.task(arif, speeds.id)).task.ownerIds).toEqual(["m-arif", "m-jack"]);
+    expect((await board.task(arif, speeds.id)).task).toMatchObject({ ownerIds: ["m-arif", "m-jack"], ownerNames: [] });
   });
 
-  it("stands in as Owner until the team board's Owner signs in, then hands over", async () => {
+  it("never stands in as Owner: an Owner the board can't place stays on the team board only (ADR 0009)", async () => {
     const snap = snapshot();
     snap.config = { ...config, people: { ...config.people, u_new: "new.person@example.com" } };
-    snap.actions.a1 = { ...snap.actions.a1!, ownerIds: ["u_new"] };
+    snap.actions.a1 = { ...snap.actions.a1!, ownerIds: ["u_new"], ownerNames: ["Example Colleague"], hbfOwner: "Example Manager" };
     await run(snap);
     const speeds = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title === "Check sample line speeds")!;
-    expect(speeds.ownerIds).toEqual(["m-arif"]);
+    expect(speeds).toMatchObject({ ownerIds: [], ownerNames: ["Example Colleague"], companyOwner: "Example Manager" });
     clock = new Date("2026-10-14T12:00:00Z");
     expect((await run(snap)).plan.artifact.filter((w) => w.doc_id === "a1")).toEqual([]);
 
-    await board.recordPerson({ id: "new.person@example.com", email: "new.person@example.com", name: "New Example", kind: "member", companyId: null });
+    // Once the Portal lists them, they are the Owner on the board too, and the team board keeps its user.
+    await board.recordDirectory([{ id: "new.person@example.com", email: "new.person@example.com", name: "New Example", kind: "member", companyId: null, signedInAt: null }]);
+    snap.actions.a1 = { ...snap.actions.a1!, editedAt: "2026-10-14T12:30:00Z" };
     clock = new Date("2026-10-14T13:00:00Z");
-    const { plan } = await run(snap);
-    expect(plan.artifact.filter((w) => w.doc_id === "a1")).toEqual([]);
+    await run(snap);
     expect((await board.task(arif, speeds.id)).task.ownerIds).toEqual(["new.person@example.com"]);
     expect(snap.actions.a1!.ownerIds).toEqual(["u_new"]);
+  });
+
+  it("releases a stand-in Owner the earlier sync put on a Task, and never sends it to the team board", async () => {
+    const snap = snapshot();
+    await run(snap);
+    const budget = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title.startsWith("Draft an example budget"))!;
+    // What the sync did before ADR 0009: the syncing Member stood in as Owner.
+    clock = new Date("2026-10-14T11:00:00Z");
+    await board.updateTask(arif, budget.id, { ownerIds: ["m-arif"] });
+    clock = new Date("2026-10-14T12:00:00Z");
+    const { plan } = await run(snap);
+    expect(plan.artifact.filter((w) => w.doc_id === "a2")).toEqual([]);
+    expect((await board.task(arif, budget.id)).task.ownerIds).toEqual([]);
+    clock = new Date("2026-10-14T13:00:00Z");
+    expect((await run(snap)).plan).toMatchObject({ board: [], artifact: [] });
+  });
+
+  it("keeps an Owner a person chose on the board, even if it is the syncing Member", async () => {
+    const snap = snapshot();
+    await run(snap);
+    const budget = (await board.board(arif, "c-hbf")).tasks.find((t) => t.title.startsWith("Draft an example budget"))!;
+    clock = new Date("2026-10-14T11:00:00Z");
+    await board.updateTask({ memberId: "m-arif", via: "screen" }, budget.id, { ownerIds: ["m-arif"] });
+    clock = new Date("2026-10-14T12:00:00Z");
+    const { plan } = await run(snap);
+    expect(plan.artifact).toEqual([expect.objectContaining({ doc_id: "a2", data: expect.objectContaining({ ownerIds: ["u_arif"] }) })]);
+    expect((await board.task(arif, budget.id)).task.ownerIds).toEqual(["m-arif"]);
+  });
+
+  it("brings team board Projects to the board, puts their Tasks in them, and merges Updates both ways (ADR 0008)", async () => {
+    const snap = snapshot();
+    snap.groups = {
+      g1: {
+        name: "Example line project",
+        note: "Faster changeovers on the example line.",
+        projectId: "p-acme",
+        categoryId: "s-plant",
+        ownerName: "Example Colleague",
+        phase: "building",
+        log: [{ at: "2026-10-02T09:00:00Z", by: "u_theran", text: "Kicked off." }],
+        editedAt: "2026-10-02T09:00:00Z",
+      },
+    };
+    snap.actions.a1 = { ...snap.actions.a1!, groupId: "g1" };
+    const { result } = await run(snap);
+    expect(result.projects).toEqual({ created: 1, updated: 0, updates: 1 });
+    const view = await board.board(arif, "c-hbf");
+    const project = view.projects.find((p) => p.project.name === "Example line project")!;
+    expect(project.project).toMatchObject({ ownerName: "Example Colleague", phase: "building", goal: "Faster changeovers on the example line." });
+    expect(view.tasks.find((t) => t.title === "Check sample line speeds")!.projectId).toBe(project.project.id);
+    const detail = await board.project(arif, project.project.id);
+    expect(detail.updates).toEqual([expect.objectContaining({ byName: "Theran Example", text: "Kicked off.", at: "2026-10-02T09:00:00.000Z" })]);
+
+    // An Update written on the board goes to the team board's log; nothing repeats after that.
+    clock = new Date("2026-10-14T12:00:00Z");
+    await board.addProjectUpdate({ memberId: "m-arif", via: "screen" }, project.project.id, { text: "Pilot shift booked." });
+    clock = new Date("2026-10-14T13:00:00Z");
+    const second = await run(snap);
+    expect(second.plan.artifact).toEqual([expect.objectContaining({ collection: "groups", doc_id: "g1" })]);
+    expect(snap.groups.g1!.log!.map((e) => e.text)).toEqual(["Kicked off.", "Pilot shift booked."]);
+    clock = new Date("2026-10-14T14:00:00Z");
+    expect((await run(snap)).plan).toMatchObject({ projects: [], board: [], artifact: [] });
+
+    // A board Project goes to the team board, and stays linked.
+    await board.createProject(arif, { companyId: "c-hbf", departmentId: "innovation", areaId: "a-hbf-systems", name: "Example board project", phase: "idea" });
+    clock = new Date("2026-10-14T15:00:00Z");
+    const third = await run(snap);
+    expect(third.plan.artifact).toEqual([expect.objectContaining({ op: "set", collection: "groups", data: expect.objectContaining({ name: "Example board project", phase: "idea" }) })]);
+    clock = new Date("2026-10-14T16:00:00Z");
+    expect((await run(snap)).plan).toMatchObject({ projects: [], board: [], artifact: [] });
   });
 
   it("removes a Task on the board when it is removed on the team board", async () => {

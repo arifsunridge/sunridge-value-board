@@ -43,6 +43,37 @@ if (process.env.TEST_DB_HOST) {
 }
 
 describe.each(stores)("%s store", (_name, make) => {
+  it("round-trips Projects, Task owner names and append-only Updates", async () => {
+    const store = await make();
+    const board = new Board(store, () => new Date("2026-10-04T10:00:00Z"));
+    const actor = { memberId: "m-arif", via: "screen" as const };
+    const project = await board.createProject(actor, {
+      companyId: "c-hbf",
+      departmentId: "innovation",
+      areaId: "a-hbf-systems",
+      name: "Example app",
+      goal: "One place for the example data.",
+      ownerName: "Example Colleague",
+      phase: "building",
+      repository: "example-org/example-app",
+      liveUrl: "https://example.com/app",
+    });
+    expect(await store.getProject(project.id)).toEqual(project);
+    const task = await board.createTask(actor, {
+      companyId: "c-hbf",
+      departmentId: "operations",
+      title: "Ship the example app",
+      priority: "medium",
+      ownerNames: ["Example Colleague"],
+      companyOwner: "Example Manager",
+      projectId: project.id,
+    });
+    expect(await store.getTask(task.id)).toEqual(task);
+    await board.addProjectUpdate(actor, project.id, { text: "First version is live." });
+    expect((await store.listProjectUpdates({ projectId: project.id })).map((u) => u.text)).toEqual(["First version is live."]);
+    expect((await store.listProjects({ companyId: "c-hbf" })).map((p) => p.id)).toEqual([project.id]);
+  });
+
   it("round-trips Tasks, including empty notes, arrays and nulls", async () => {
     const store = await make();
     const task = await store.getTask("t-1");

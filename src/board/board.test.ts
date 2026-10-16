@@ -57,9 +57,20 @@ describe("creating a Task", () => {
     await expectError(board.createTask(arif, newTask({ title: "one two three four five six seven eight nine" })), "invalid");
   });
 
-  it("refuses a Task without an Owner, or with an Owner who isn't a Member", async () => {
-    await expectError(board.createTask(arif, newTask({ ownerIds: [] })), "invalid");
+  it("allows a Task with no Owner yet, but refuses an Owner id the board doesn't know (ADR 0009)", async () => {
+    await expect(board.createTask(arif, newTask({ ownerIds: [] }))).resolves.toMatchObject({ ownerIds: [], ownerNames: [] });
     await expectError(board.createTask(arif, newTask({ ownerIds: ["someone-at-hbf"] })), "invalid");
+  });
+
+  it("takes Owners typed by name, and makes a name that is someone on the board that person", async () => {
+    const task = await board.createTask(arif, newTask({ ownerIds: [], ownerNames: ["Example Colleague", "Jack Example", " example colleague "] }));
+    expect(task).toMatchObject({ ownerIds: ["m-jack"], ownerNames: ["Example Colleague"] });
+    await expectError(board.createTask(arif, newTask({ ownerNames: ["A", "B", "C", "D", "E", "F"] })), "invalid");
+  });
+
+  it("keeps the company owner as a name", async () => {
+    const task = await board.createTask(arif, newTask({ companyOwner: "  Example   Manager " }));
+    expect(task.companyOwner).toBe("Example Manager");
   });
 
   it("refuses a note longer than two lines", async () => {
@@ -161,8 +172,24 @@ describe("who can change a Task", () => {
     expect(trail.at(-1)).toMatchObject({ action: "joined", memberId: "m-hugues" });
   });
 
-  it("never leaves a Task without an Owner", async () => {
-    await expectError(board.updateTask(theran, "t-2", { ownerIds: [] }), "invalid");
+  it("can leave a Task without an Owner", async () => {
+    await expect(board.updateTask(theran, "t-2", { ownerIds: [] })).resolves.toMatchObject({ ownerIds: [] });
+  });
+
+  it("lets any Member change a Task none of whose Owners has signed in (ADR 0009)", async () => {
+    await board.recordDirectory([{ id: "new@example.com", email: "new@example.com", name: "New Example", kind: "member", companyId: null, signedInAt: null }]);
+    const theirs = await board.createTask(arif, newTask({ ownerIds: ["new@example.com"] }));
+    await expect(board.updateTask(hugues, theirs.id, { due: "2026-11-02" })).resolves.toMatchObject({ due: "2026-11-02" });
+    const named = await board.createTask(arif, newTask({ ownerIds: [], ownerNames: ["Example Colleague"] }));
+    await expect(board.moveTask(hugues, named.id, { status: "now" })).resolves.toMatchObject({ status: "now" });
+    // Once an Owner has signed in, only Owners and Contributors may change it again.
+    await board.recordPerson({ id: "new@example.com", email: "new@example.com", name: "New Example", kind: "member", companyId: null, signedInAt: null });
+    await expectError(board.updateTask(hugues, theirs.id, { due: "2026-11-03" }), "not_allowed");
+  });
+
+  it("never lets the HBF team change a Task just because its Owners haven't signed in", async () => {
+    const named = await board.createTask(arif, newTask({ ownerIds: [], ownerNames: ["Example Colleague"], shared: true }));
+    await expectError(board.updateTask({ memberId: "h-jordan", via: "screen" }, named.id, { due: "2026-11-02" }), "not_allowed");
   });
 });
 
@@ -358,9 +385,11 @@ describe("Company teams and Shared Tasks (ADR 0005)", () => {
     await expectError(board.moveTask(theran, "t-1", { status: "now", areaId: "a-hbf-reporting" }), "invalid");
   });
 
-  it("keeps a Member as Owner, and lets the HBF team own only Shared Tasks in their Company", async () => {
-    await expectError(board.updateTask(theran, "t-2", { ownerIds: ["h-jordan"] }), "invalid");
+  it("lets the HBF team own only Shared Tasks in their Company", async () => {
+    // A Shared Task may be owned by the HBF team alone; Sunridge no longer has to be an Owner (ADR 0009).
+    await expect(board.updateTask(theran, "t-2", { ownerIds: ["h-jordan"] })).resolves.toMatchObject({ ownerIds: ["h-jordan"] });
     await expectError(board.updateTask(theran, "t-5", { contributorIds: ["h-jordan"] }), "invalid");
+    await expectError(board.updateTask(theran, "t-5", { ownerIds: ["h-jordan"] }), "invalid");
     const task = await board.createTask(arif, newTask({ shared: true, ownerIds: ["m-arif", "h-jordan"] }));
     expect(task.ownerIds).toEqual(["m-arif", "h-jordan"]);
   });
@@ -408,6 +437,11 @@ class FailingStore implements Store {
   putDocument = (d: Parameters<Store["putDocument"]>[0]) => this.inner.putDocument(d);
   appendTrail = (e: Parameters<Store["appendTrail"]>[0]) => this.inner.appendTrail(e);
   listTrail = (f: Parameters<Store["listTrail"]>[0]) => this.inner.listTrail(f);
+  listProjects = (f: Parameters<Store["listProjects"]>[0]) => this.inner.listProjects(f);
+  getProject = (id: string) => this.inner.getProject(id);
+  putProject = (p: Parameters<Store["putProject"]>[0]) => this.inner.putProject(p);
+  appendProjectUpdates = (u: Parameters<Store["appendProjectUpdates"]>[0]) => this.inner.appendProjectUpdates(u);
+  listProjectUpdates = (f: Parameters<Store["listProjectUpdates"]>[0]) => this.inner.listProjectUpdates(f);
 }
 
 /** A store where another write lands just before ours, to test the Now race. */
@@ -427,3 +461,21 @@ class RacingStore extends FailingStore {
     await this.base.putTask(task);
   };
 }
+
+describe("people from the HBF Portal (ADR 0009)", () => {
+  const colleague = { id: "new@example.com", email: "new@example.com", name: "New Example", kind: "member" as const, companyId: null, signedInAt: null };
+
+  it("adds people who haven't signed in, without marking them signed in", async () => {
+    expect(await board.recordDirectory([colleague])).toBe(1);
+    expect((await board.people(arif)).find((p) => p.id === colleague.id)).toMatchObject({ signedInAt: null });
+    expect(await board.recordDirectory([colleague])).toBe(0);
+  });
+
+  it("records the first sign-in once, and the Portal list never clears it", async () => {
+    await board.recordPerson(colleague);
+    const signedIn = (await board.people(arif)).find((p) => p.id === colleague.id)!.signedInAt;
+    expect(signedIn).toBe("2026-10-04T10:00:00.000Z");
+    await board.recordDirectory([{ ...colleague, name: "New Example Renamed" }]);
+    expect((await board.people(arif)).find((p) => p.id === colleague.id)).toMatchObject({ name: "New Example Renamed", signedInAt: signedIn });
+  });
+});

@@ -1,5 +1,5 @@
 import mysql, { type Pool, type PoolOptions, type RowDataPacket } from "mysql2/promise";
-import type { Area, Company, Document, Person, Task, TrailEntry } from "@/board/model";
+import type { Area, Company, Document, Person, Project, ProjectUpdate, Task, TrailEntry } from "@/board/model";
 import type { Store } from "./store";
 
 /**
@@ -14,7 +14,8 @@ export const SCHEMA = [
     name VARCHAR(200) NOT NULL,
     email VARCHAR(191) NOT NULL,
     kind VARCHAR(16) NOT NULL,
-    company_id VARCHAR(64) NULL
+    company_id VARCHAR(64) NULL,
+    signed_in_at VARCHAR(30) NULL
   )`,
   `CREATE TABLE IF NOT EXISTS vb_companies (
     id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -40,7 +41,10 @@ export const SCHEMA = [
     status VARCHAR(16) NOT NULL,
     priority VARCHAR(16) NOT NULL,
     owner_ids TEXT NOT NULL,
+    owner_names TEXT NULL,
     contributor_ids TEXT NOT NULL,
+    company_owner VARCHAR(200) NOT NULL DEFAULT '',
+    project_id VARCHAR(64) NULL,
     due CHAR(10) NULL,
     note VARCHAR(400) NOT NULL,
     shared TINYINT(1) NOT NULL,
@@ -49,6 +53,40 @@ export const SCHEMA = [
     created_at VARCHAR(30) NOT NULL,
     created_by VARCHAR(191) NOT NULL,
     updated_at VARCHAR(30) NOT NULL,
+    INDEX (company_id),
+    INDEX (project_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS vb_projects (
+    id VARCHAR(64) NOT NULL PRIMARY KEY,
+    company_id VARCHAR(64) NOT NULL,
+    department_id VARCHAR(32) NOT NULL,
+    area_id VARCHAR(64) NULL,
+    name VARCHAR(200) NOT NULL,
+    goal VARCHAR(400) NOT NULL,
+    owner_id VARCHAR(191) NULL,
+    owner_name VARCHAR(200) NOT NULL,
+    phase VARCHAR(16) NULL,
+    repository VARCHAR(400) NOT NULL,
+    portal_app VARCHAR(64) NOT NULL,
+    live_url VARCHAR(400) NOT NULL,
+    sort_order INT NOT NULL,
+    removed TINYINT(1) NOT NULL,
+    created_at VARCHAR(30) NOT NULL,
+    created_by VARCHAR(191) NOT NULL,
+    updated_at VARCHAR(30) NOT NULL,
+    INDEX (company_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS vb_project_updates (
+    seq BIGINT NOT NULL AUTO_INCREMENT UNIQUE,
+    id VARCHAR(64) NOT NULL PRIMARY KEY,
+    project_id VARCHAR(64) NOT NULL,
+    company_id VARCHAR(64) NOT NULL,
+    at VARCHAR(30) NOT NULL,
+    by_id VARCHAR(191) NULL,
+    by_name VARCHAR(200) NOT NULL,
+    text TEXT NOT NULL,
+    via VARCHAR(16) NOT NULL,
+    INDEX (project_id),
     INDEX (company_id)
   )`,
   `CREATE TABLE IF NOT EXISTS vb_documents (
@@ -84,6 +122,18 @@ export const SCHEMA = [
   )`,
 ];
 
+/**
+ * Columns added after the first release (ADR 0008, 0009). A new database gets them from SCHEMA;
+ * an existing one gets them from `npm run db:init`, because the app's own login may not ALTER.
+ */
+export const MIGRATIONS: { table: string; column: string; definition: string; then?: string }[] = [
+  // Until then the board knew only people who had signed in, so everyone already there has.
+  { table: "vb_people", column: "signed_in_at", definition: "VARCHAR(30) NULL", then: "UPDATE vb_people SET signed_in_at = ? WHERE signed_in_at IS NULL" },
+  { table: "vb_tasks", column: "owner_names", definition: "TEXT NULL" },
+  { table: "vb_tasks", column: "company_owner", definition: "VARCHAR(200) NOT NULL DEFAULT ''" },
+  { table: "vb_tasks", column: "project_id", definition: "VARCHAR(64) NULL, ADD INDEX (project_id)" },
+];
+
 /** The two Companies v1 starts with. Inserted only when missing; names can be changed in the database. */
 export const STARTING_COMPANIES: Company[] = [
   { id: "hbf", name: "HBF", kind: "portfolio", english: "US", order: 1 },
@@ -95,7 +145,7 @@ type Row = RowDataPacket & Record<string, unknown>;
 const str = (v: unknown): string => String(v);
 const opt = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 const bool = (v: unknown): boolean => Number(v) === 1;
-const ids = (v: unknown): string[] => JSON.parse(String(v)) as string[];
+const ids = (v: unknown): string[] => (v === null || v === undefined ? [] : (JSON.parse(String(v)) as string[]));
 
 export class MysqlStore implements Store {
   private ready: Promise<void> | null = null;
@@ -110,6 +160,7 @@ export class MysqlStore implements Store {
   init(companies: Company[] = STARTING_COMPANIES): Promise<void> {
     this.ready ??= (async () => {
       for (const statement of SCHEMA) await this.pool.query(statement);
+      await this.migrate();
       for (const c of companies) {
         await this.pool.execute("INSERT IGNORE INTO vb_companies (id, name, kind, english, sort_order) VALUES (?, ?, ?, ?, ?)", [
           c.id,
@@ -126,9 +177,25 @@ export class MysqlStore implements Store {
     return this.ready;
   }
 
+  /** Adds any column in MIGRATIONS that is missing. Safe to run again. */
+  async migrate(): Promise<void> {
+    const [rows] = await this.pool.query<Row[]>(
+      "SELECT TABLE_NAME AS t, COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE()",
+    );
+    const have = new Set(rows.map((r) => `${str(r.t)}.${str(r.c)}`));
+    for (const m of MIGRATIONS.filter((m) => !have.has(`${m.table}.${m.column}`))) {
+      try {
+        await this.pool.query(`ALTER TABLE ${m.table} ADD COLUMN ${m.column} ${m.definition}`);
+        if (m.then) await this.pool.query(m.then, [new Date().toISOString()]);
+      } catch {
+        throw new Error(`The board's tables need new columns (${m.table}.${m.column}). Run npm run db:init with an admin login.`);
+      }
+    }
+  }
+
   /** Tests only: start from empty tables. */
   async dropAllForTests(): Promise<void> {
-    for (const table of ["vb_people", "vb_companies", "vb_areas", "vb_tasks", "vb_documents", "vb_trail"]) {
+    for (const table of ["vb_people", "vb_companies", "vb_areas", "vb_tasks", "vb_projects", "vb_project_updates", "vb_documents", "vb_trail"]) {
       await this.pool.query(`DROP TABLE IF EXISTS ${table}`);
     }
     this.ready = null;
@@ -158,14 +225,16 @@ export class MysqlStore implements Store {
       email: str(r.email),
       kind: str(r.kind) as Person["kind"],
       companyId: opt(r.company_id),
+      signedInAt: opt(r.signed_in_at),
     }));
   }
 
   async putPerson(p: Person): Promise<void> {
     await this.run(
-      `INSERT INTO vb_people (id, name, email, kind, company_id) VALUES (?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email), kind = VALUES(kind), company_id = VALUES(company_id)`,
-      [p.id, p.name, p.email, p.kind, p.companyId],
+      `INSERT INTO vb_people (id, name, email, kind, company_id, signed_in_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email), kind = VALUES(kind), company_id = VALUES(company_id),
+         signed_in_at = VALUES(signed_in_at)`,
+      [p.id, p.name, p.email, p.kind, p.companyId, p.signedInAt],
     );
   }
 
@@ -220,7 +289,10 @@ export class MysqlStore implements Store {
       status: str(r.status) as Task["status"],
       priority: str(r.priority) as Task["priority"],
       ownerIds: ids(r.owner_ids),
+      ownerNames: ids(r.owner_names),
       contributorIds: ids(r.contributor_ids),
+      companyOwner: str(r.company_owner ?? ""),
+      projectId: opt(r.project_id),
       due: opt(r.due),
       note: str(r.note),
       shared: bool(r.shared),
@@ -246,11 +318,12 @@ export class MysqlStore implements Store {
 
   async putTask(t: Task): Promise<void> {
     await this.run(
-      `INSERT INTO vb_tasks (id, company_id, department_id, area_id, title, status, priority, owner_ids, contributor_ids, due, note, shared, removed, lever_id, created_at, created_by, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO vb_tasks (id, company_id, department_id, area_id, title, status, priority, owner_ids, owner_names, contributor_ids, company_owner, project_id, due, note, shared, removed, lever_id, created_at, created_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE company_id = VALUES(company_id), department_id = VALUES(department_id), area_id = VALUES(area_id),
          title = VALUES(title), status = VALUES(status), priority = VALUES(priority), owner_ids = VALUES(owner_ids),
-         contributor_ids = VALUES(contributor_ids), due = VALUES(due), note = VALUES(note), shared = VALUES(shared),
+         owner_names = VALUES(owner_names), contributor_ids = VALUES(contributor_ids), company_owner = VALUES(company_owner),
+         project_id = VALUES(project_id), due = VALUES(due), note = VALUES(note), shared = VALUES(shared),
          removed = VALUES(removed), lever_id = VALUES(lever_id), updated_at = VALUES(updated_at)`,
       [
         t.id,
@@ -261,7 +334,10 @@ export class MysqlStore implements Store {
         t.status,
         t.priority,
         JSON.stringify(t.ownerIds),
+        JSON.stringify(t.ownerNames),
         JSON.stringify(t.contributorIds),
+        t.companyOwner,
+        t.projectId,
         t.due,
         t.note,
         t.shared ? 1 : 0,
@@ -272,6 +348,101 @@ export class MysqlStore implements Store {
         t.updatedAt,
       ],
     );
+  }
+
+  // ---------- Projects ----------
+
+  private project(r: Row): Project {
+    return {
+      id: str(r.id),
+      companyId: str(r.company_id),
+      departmentId: str(r.department_id) as Project["departmentId"],
+      areaId: opt(r.area_id),
+      name: str(r.name),
+      goal: str(r.goal),
+      ownerId: opt(r.owner_id),
+      ownerName: str(r.owner_name),
+      phase: opt(r.phase) as Project["phase"],
+      repository: str(r.repository),
+      portalApp: str(r.portal_app),
+      liveUrl: str(r.live_url),
+      order: Number(r.sort_order),
+      removed: bool(r.removed),
+      createdAt: str(r.created_at),
+      createdBy: str(r.created_by),
+      updatedAt: str(r.updated_at),
+    };
+  }
+
+  async listProjects(filter: { companyId?: string }): Promise<Project[]> {
+    const rows = filter.companyId
+      ? await this.rows("SELECT * FROM vb_projects WHERE company_id = ?", [filter.companyId])
+      : await this.rows("SELECT * FROM vb_projects");
+    return rows.map((r) => this.project(r));
+  }
+
+  async getProject(id: string): Promise<Project | null> {
+    const [r] = await this.rows("SELECT * FROM vb_projects WHERE id = ?", [id]);
+    return r ? this.project(r) : null;
+  }
+
+  async putProject(p: Project): Promise<void> {
+    await this.run(
+      `INSERT INTO vb_projects (id, company_id, department_id, area_id, name, goal, owner_id, owner_name, phase, repository, portal_app, live_url, sort_order, removed, created_at, created_by, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE company_id = VALUES(company_id), department_id = VALUES(department_id), area_id = VALUES(area_id),
+         name = VALUES(name), goal = VALUES(goal), owner_id = VALUES(owner_id), owner_name = VALUES(owner_name), phase = VALUES(phase),
+         repository = VALUES(repository), portal_app = VALUES(portal_app), live_url = VALUES(live_url), sort_order = VALUES(sort_order),
+         removed = VALUES(removed), updated_at = VALUES(updated_at)`,
+      [
+        p.id,
+        p.companyId,
+        p.departmentId,
+        p.areaId,
+        p.name,
+        p.goal,
+        p.ownerId,
+        p.ownerName,
+        p.phase,
+        p.repository,
+        p.portalApp,
+        p.liveUrl,
+        p.order,
+        p.removed ? 1 : 0,
+        p.createdAt,
+        p.createdBy,
+        p.updatedAt,
+      ],
+    );
+  }
+
+  // ---------- Project Updates (append-only) ----------
+
+  async appendProjectUpdates(updates: ProjectUpdate[]): Promise<void> {
+    for (const u of updates) {
+      await this.run(
+        `INSERT INTO vb_project_updates (id, project_id, company_id, at, by_id, by_name, text, via) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [u.id, u.projectId, u.companyId, u.at, u.by, u.byName, u.text, u.via],
+      );
+    }
+  }
+
+  async listProjectUpdates(filter: { projectId?: string; companyId?: string }): Promise<ProjectUpdate[]> {
+    const where: string[] = [];
+    const params: string[] = [];
+    if (filter.projectId) (where.push("project_id = ?"), params.push(filter.projectId));
+    if (filter.companyId) (where.push("company_id = ?"), params.push(filter.companyId));
+    const sql = `SELECT * FROM vb_project_updates${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY at, seq`;
+    return (await this.rows(sql, params)).map((r) => ({
+      id: str(r.id),
+      projectId: str(r.project_id),
+      companyId: str(r.company_id),
+      at: str(r.at),
+      by: opt(r.by_id),
+      byName: str(r.by_name),
+      text: str(r.text),
+      via: str(r.via) as ProjectUpdate["via"],
+    }));
   }
 
   // ---------- Documents ----------

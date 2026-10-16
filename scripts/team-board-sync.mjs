@@ -7,7 +7,7 @@
 // then leave it unset. NODE_USE_ENV_PROXY=1 makes Node's fetch use the environment's proxy.
 //
 // <export dir> holds the artifact's collections as ArtifactData saves them with out_dir:
-// actions/, categories/, documents/ and valueBoardSync/config.json, one JSON file per document.
+// actions/, categories/, groups/, documents/ and valueBoardSync/config.json, one JSON file per document.
 // It posts them to the board, then writes each change for the artifact to <out dir>/writes/ and
 // the batches to apply (50 writes each) to <out dir>/batches.json. It prints counts only.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
@@ -30,7 +30,13 @@ function collection(name) {
 
 const config = collection("valueBoardSync").config;
 if (!config) throw new Error("No valueBoardSync/config document in the export.");
-const snapshot = { actions: collection("actions"), categories: collection("categories"), documents: collection("documents"), config };
+const snapshot = {
+  actions: collection("actions"),
+  categories: collection("categories"),
+  groups: collection("groups"),
+  documents: collection("documents"),
+  config,
+};
 
 const response = await fetch(url, {
   method: "POST",
@@ -53,8 +59,14 @@ writeFileSync(join(outDir, "batches.json"), JSON.stringify(batches, null, 2));
 
 console.log(
   JSON.stringify({
-    sent: { actions: Object.keys(snapshot.actions).length },
-    board: { created: body.board.created, updated: body.board.updated, notInNow: body.board.notInNow, failed: body.board.failed.length },
+    sent: { actions: Object.keys(snapshot.actions).length, groups: Object.keys(snapshot.groups).length },
+    board: {
+      created: body.board.created,
+      updated: body.board.updated,
+      notInNow: body.board.notInNow,
+      projects: body.board.projects,
+      failed: body.board.failed.length,
+    },
     teamBoard: { writes: writes.length, batches: batches.length },
     skipped: body.skipped.length,
   }),

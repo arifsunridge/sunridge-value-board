@@ -1,11 +1,12 @@
 ---
 status: accepted
 supersedes: 0001
+amended_by: 0009
 ---
 
 # Company teams see only Shared Tasks, and update the ones they own
 
-People at a portfolio company (the Company team, such as the HBF team) can sign in to the board through the HBF Portal (decided by Arif on 14 October 2026, after Jack asked to give HBF's CEO access). The Company team sees only their own Company's Tasks that a Member has marked Shared. Tasks in Talent & organisation and Finance can never be Shared. Someone in the Company team can own or contribute to a Shared Task, and on those Tasks can change the Status, title, due date and note, add Links and keep their Documents up to date (Files and Claude work are added by Members). Priority, Owners, Contributors, the Home and Shared stay with Members, and every Task keeps at least one Member as Owner.
+People at a portfolio company (the Company team, such as the HBF team) can sign in to the board through the HBF Portal (decided by Arif on 14 October 2026, after Jack asked to give HBF's CEO access). The Company team sees only their own Company's Tasks that a Member has marked Shared. Tasks in Talent & organisation and Finance can never be Shared. Someone in the Company team can own or contribute to a Shared Task, and on those Tasks can change the Status, title, due date and note, add Links and keep their Documents up to date (Files and Claude work are added by Members). Priority, Owners, Contributors, the Home and Shared stay with Members. (ADR 0009 dropped "every Task keeps at least one Member as Owner".)
 
 This replaces ADR 0001 ("only Sunridge staff can ever sign in"). Its reason still holds: the board carries people, financing and exit work that company staff must never see. So sharing is per Task, off by default, and impossible for the two Departments where that work lives.
 

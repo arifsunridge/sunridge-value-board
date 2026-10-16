@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AccessDecision } from "@arifsunridge/portal-kit";
-import { personFromPortal } from "./portal-person";
+import { personFromDirectory, personFromPortal } from "./portal-person";
 
 const allowed = (audience: AccessDecision["audience"], role: string | null): AccessDecision => ({
   allowed: true,
@@ -19,6 +19,7 @@ describe("who the HBF Portal's answer makes a Person (ADR 0005, 0006)", () => {
       name: "Someone Example",
       kind: "member",
       companyId: null,
+      signedInAt: null,
     });
   });
 
@@ -31,6 +32,19 @@ describe("who the HBF Portal's answer makes a Person (ADR 0005, 0006)", () => {
     expect(personFromPortal(who, allowed("sunridge", "HBF team"), "hbf")).toBe("audience");
     expect(personFromPortal(who, allowed("external", "Sunridge team"), "hbf")).toBe("audience");
     expect(personFromPortal(who, allowed("sunridge", null), "hbf")).toBe("audience");
+  });
+
+  it("takes the Portal's list of people by the same rule, before they sign in (ADR 0009)", () => {
+    expect(personFromDirectory({ email: "New@Example.com", name: null, audience: "sunridge", role: "Sunridge team" }, "hbf")).toEqual({
+      id: "new@example.com",
+      email: "new@example.com",
+      name: "new@example.com",
+      kind: "member",
+      companyId: null,
+      signedInAt: null,
+    });
+    expect(personFromDirectory({ email: "x@hbf.example", name: "X", audience: "hbf", role: "HBF team" }, "hbf")).toMatchObject({ kind: "company", companyId: "hbf" });
+    expect(personFromDirectory({ email: "y@example.com", name: "Y", audience: "external", role: "Sunridge team" }, "hbf")).toBeNull();
   });
 
   it("refuses anyone the portal refuses, and says when the portal can't be reached", () => {

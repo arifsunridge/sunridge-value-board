@@ -1,7 +1,14 @@
-// Two-way sync with the "Sunridge team board" Claude artifact (ADR 0007).
+// Two-way sync with the "Sunridge team board" Claude artifact (ADR 0007, 0008, 0009).
 // Pure functions: given both sides, decide what to change on each. Nothing here writes.
+//
+// Words: the artifact's `projects` collection holds Companies and its `groups` collection holds
+// Projects. In this file "project" always means a board Project, and a team board group id is a
+// "group id".
 
 import {
+  OWNER_NAMES_MAX,
+  OWNER_NAME_MAX_CHARS,
+  PHASES,
   PRIORITIES,
   STATUSES,
   TITLE_MAX_WORDS,
@@ -9,10 +16,15 @@ import {
   type Area,
   type Company,
   type DepartmentId,
+  type Person,
+  type Phase,
   type Priority,
+  type Project,
+  type ProjectUpdate,
   type Status,
   type Task,
 } from "@/board/model";
+import { People } from "@/board/people";
 import { words } from "@/board/rules";
 import { shortNote } from "@/import/team-board";
 
@@ -23,10 +35,44 @@ export interface TeamBoardAction {
   priority?: string;
   categoryId?: string | null;
   projectId: string;
+  groupId?: string | null;
   due?: string | null;
   ownerIds?: string[];
+  /** Owners typed by name, for people who haven't opened the artifact (ADR 0009). */
+  ownerNames?: string[];
+  /** The portfolio company's owner, by name. The board's company owner. */
+  hbfOwner?: string;
   note?: string;
   waitingOn?: string;
+  removed?: boolean;
+  createdAt?: string;
+  editedAt?: string;
+}
+
+/** One line of a group's `log`: a Project Update. */
+export interface TeamBoardLogEntry {
+  at: string;
+  by?: string;
+  byName?: string;
+  text: string;
+}
+
+/** One document in the artifact's `groups` collection: a Project. */
+export interface TeamBoardGroup {
+  name: string;
+  note?: string;
+  /** The Company, as an artifact project id. */
+  projectId: string;
+  /** The Area, or the whole Department. */
+  categoryId: string;
+  order?: number;
+  ownerId?: string;
+  ownerName?: string;
+  phase?: string;
+  repository?: string;
+  portalApp?: string;
+  liveUrl?: string;
+  log?: TeamBoardLogEntry[];
   removed?: boolean;
   createdAt?: string;
   editedAt?: string;
@@ -62,6 +108,7 @@ export interface SyncConfig {
 export interface TeamBoardSnapshot {
   actions: Record<string, TeamBoardAction>;
   categories: Record<string, TeamBoardCategory>;
+  groups?: Record<string, TeamBoardGroup>;
   documents?: Record<string, TeamBoardDocument>;
   config: SyncConfig;
 }
@@ -71,10 +118,19 @@ export interface BoardSide {
   areas: Area[];
   /** Every Task, removed ones too. */
   tasks: Task[];
-  /** Team board id → Task id, for Tasks that came from the team board. */
-  links: Map<string, string>;
-  /** Ids of the people the board knows. Only they can be Owners. */
-  people: string[];
+  /** Every Project, removed ones too. */
+  projects: Project[];
+  /** Every Project Update. */
+  updates: ProjectUpdate[];
+  /** Team board ids to board ids, for what came from the team board. */
+  links: { tasks: Map<string, string>; projects: Map<string, string> };
+  /**
+   * Tasks whose only Owner is the syncing Member, standing in for someone the sync couldn't place
+   * before ADR 0009. Their Owners come from the team board once, whichever side changed last.
+   */
+  standIns?: Set<string>;
+  /** The people the board knows. Only they can be Owners by id; anyone else is a typed name. */
+  people: Person[];
 }
 
 /** A Task as both boards can express it, in the board's terms. */
@@ -87,12 +143,35 @@ export interface Shape {
   priority: Priority;
   /** Sorted emails. */
   ownerIds: string[];
+  /** Typed names, sorted. */
+  ownerNames: string[];
+  companyOwner: string;
+  /** The Project, as its team board group id. */
+  groupId: string | null;
   due: string | null;
   note: string;
   removed: boolean;
 }
 
-export type Field = "title" | "status" | "priority" | "ownerIds" | "due" | "note" | "home" | "removed";
+/** A Project as both boards can express it, in the board's terms. */
+export interface ProjectShape {
+  companyId: string;
+  departmentId: DepartmentId;
+  areaName: string | null;
+  name: string;
+  goal: string;
+  ownerId: string | null;
+  ownerName: string;
+  phase: Phase | null;
+  repository: string;
+  portalApp: string;
+  liveUrl: string;
+  order: number;
+  removed: boolean;
+}
+
+export type Field = "title" | "status" | "priority" | "ownerIds" | "ownerNames" | "companyOwner" | "project" | "due" | "note" | "home" | "removed";
+export type ProjectField = "name" | "goal" | "owner" | "phase" | "repository" | "portalApp" | "liveUrl" | "order" | "home" | "removed";
 
 export type BoardOp =
   | {
@@ -103,53 +182,126 @@ export type BoardOp =
     }
   | { kind: "update"; teamBoardId: string; taskId: string; shape: Shape; fields: Field[] };
 
+export type ProjectOp =
+  | { kind: "create"; groupId: string; shape: ProjectShape; updates: TeamBoardLogEntry[] }
+  | { kind: "update"; groupId: string; projectId: string; shape: ProjectShape; fields: ProjectField[]; updates: TeamBoardLogEntry[] };
+
 export interface ArtifactWrite {
   op: "set" | "update";
-  collection: "actions";
+  collection: "actions" | "groups";
   doc_id: string;
   data: Record<string, unknown>;
 }
 
 export interface SyncPlan {
+  /** Applied first, so Tasks can be put in Projects made in the same run. */
+  projects: ProjectOp[];
   board: BoardOp[];
   artifact: ArtifactWrite[];
   /** Counts and reasons only, never Task content (ADR 0002). */
   skipped: { side: "board" | "team board"; id: string; reason: string }[];
 }
 
-/** Artifact documents for Tasks added on the board get this id, which is also their link back. */
-export const artifactIdFor = (taskId: string): string => `vb-${taskId}`;
-const taskIdFromArtifactId = (id: string): string | null => (id.startsWith("vb-") ? id.slice(3) : null);
+/** Artifact documents for Tasks and Projects added on the board get this id, which is also their link back. */
+export const artifactIdFor = (boardId: string): string => `vb-${boardId}`;
+const boardIdFromArtifactId = (id: string): string | null => (id.startsWith("vb-") ? id.slice(3) : null);
 
 const sortIds = (ids: string[]) => [...new Set(ids)].sort();
+const sortNames = (names: string[]) => [...names].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+const lower = (list: string[]) => list.map((s) => s.toLowerCase()).join(",");
 const DOCUMENT_STATUS = { draft: "draft", review: "in_review", in_review: "in_review", final: "final" } as const;
+const LOG_KEEP = 200;
 
 function cutTitle(title: string): string {
   return words(title).slice(0, TITLE_MAX_WORDS).join(" ");
 }
 
-/** What a team board action is, in the board's terms. Null when it can't be placed on the board. */
-export function fromTeamBoard(action: TeamBoardAction, snapshot: TeamBoardSnapshot, side: BoardSide, fallbackOwner: string): Shape | string {
-  const companyName = snapshot.config.projects[action.projectId];
-  const company = side.companies.find((c) => c.name.toLowerCase() === companyName?.toLowerCase());
-  if (!company) return "Its project has no Company on the board.";
-  const category = action.categoryId ? snapshot.categories[action.categoryId] : undefined;
+const cut = (text: string | undefined, max: number) => (text ?? "").trim().slice(0, max);
+
+/** Owners as the board holds them. Names the board can't hold (too long, too many) are left out, not refused. */
+function ownersOf(emails: string[], names: string[], people: People): { ownerIds: string[]; ownerNames: string[] } {
+  const fit = names.map((n) => n.trim()).filter((n) => n && n.length <= OWNER_NAME_MAX_CHARS);
+  const owners = people.owners(emails, []);
+  for (const name of fit) {
+    const next = people.owners(owners.ownerIds, [...owners.ownerNames, name]);
+    if (next.ownerNames.length > OWNER_NAMES_MAX) break;
+    Object.assign(owners, next);
+  }
+  return owners;
+}
+
+/** Team board user ids to emails the board knows; unknown ones are dropped (the artifact keeps them). */
+function knownEmails(userIds: string[], snapshot: TeamBoardSnapshot, people: People): string[] {
+  return userIds.map((u) => snapshot.config.people[u]?.toLowerCase()).filter((e): e is string => Boolean(e) && Boolean(people.get(e!)));
+}
+
+/** Where a team board category puts something, in the board's terms. */
+function homeOf(categoryId: string | null | undefined, snapshot: TeamBoardSnapshot): { departmentId: DepartmentId; areaName: string | null } {
+  const category = categoryId ? snapshot.categories[categoryId] : undefined;
   const isArea = Boolean(category?.parentId);
-  const deptKey = (isArea ? category!.parentId! : (action.categoryId ?? "")).replace(/^d-/, "");
+  const deptKey = (isArea ? category!.parentId! : (categoryId ?? "")).replace(/^d-/, "");
+  return { departmentId: isDepartmentId(deptKey) ? deptKey : "strategy", areaName: isArea ? category!.name : null };
+}
+
+function companyFor(artifactProjectId: string, snapshot: TeamBoardSnapshot, side: BoardSide): Company | undefined {
+  const name = snapshot.config.projects[artifactProjectId];
+  return side.companies.find((c) => c.name.toLowerCase() === name?.toLowerCase());
+}
+
+/** The artifact project and category for a board Home. */
+function placeOnTeamBoard(
+  home: { companyId: string; departmentId: DepartmentId; areaId: string | null },
+  snapshot: TeamBoardSnapshot,
+  side: BoardSide,
+  existingProjectId?: string,
+): { projectId: string; categoryId: string } {
+  const company = side.companies.find((c) => c.id === home.companyId);
+  const projectId =
+    existingProjectId && snapshot.config.projects[existingProjectId]?.toLowerCase() === company?.name.toLowerCase()
+      ? existingProjectId
+      : (snapshot.config.newTaskProject[company?.name ?? ""] ?? existingProjectId ?? "");
+  const area = side.areas.find((a) => a.id === home.areaId);
+  const areaCategory = area
+    ? Object.entries(snapshot.categories).find(
+        ([, c]) =>
+          c.parentId === `d-${home.departmentId}` &&
+          c.name.toLowerCase() === area.name.toLowerCase() &&
+          (!c.projectId || snapshot.config.projects[c.projectId]?.toLowerCase() === company?.name.toLowerCase()),
+      )?.[0]
+    : undefined;
+  return { projectId, categoryId: areaCategory ?? `d-${home.departmentId}` };
+}
+
+/** A Project's group id on the team board, for one that came from there or went there. */
+function groupIdFor(projectId: string | null, side: BoardSide): string | null {
+  if (!projectId) return null;
+  for (const [groupId, id] of side.links.projects) if (id === projectId) return groupId;
+  return artifactIdFor(projectId);
+}
+
+// ---------- Tasks ----------
+
+/** What a team board action is, in the board's terms. A string when it can't be placed on the board. */
+export function fromTeamBoard(action: TeamBoardAction, snapshot: TeamBoardSnapshot, side: BoardSide): Shape | string {
+  const company = companyFor(action.projectId, snapshot, side);
+  if (!company) return "Its project has no Company on the board.";
+  const people = new People(side.people);
   const status: Status = (STATUSES as readonly string[]).includes(action.status) ? (action.status as Status) : "next";
-  const known = new Set(side.people.map((p) => p.toLowerCase()));
-  const owners = (action.ownerIds ?? [])
-    .map((u) => snapshot.config.people[u]?.toLowerCase())
-    .filter((e): e is string => Boolean(e) && known.has(e!));
+  const owners = ownersOf(knownEmails(action.ownerIds ?? [], snapshot, people), action.ownerNames ?? [], people);
   const note = shortNote(status === "blocked" ? action.waitingOn || action.note || "" : action.note || "").note;
+  // The team board counts a Task in a group only when both are in the same place; so does the board.
+  const group = action.groupId ? snapshot.groups?.[action.groupId] : undefined;
+  const inGroup = group && !group.removed && group.projectId === action.projectId && group.categoryId === action.categoryId;
   return {
     companyId: company.id,
-    departmentId: isDepartmentId(deptKey) ? deptKey : "strategy",
-    areaName: isArea ? category!.name : null,
+    ...homeOf(action.categoryId, snapshot),
     title: cutTitle(action.title) || "Untitled Task from the team board",
     status,
     priority: (PRIORITIES as readonly string[]).includes(action.priority ?? "") ? (action.priority as Priority) : "medium",
-    ownerIds: sortIds(owners.length ? owners : [fallbackOwner.toLowerCase()]),
+    ownerIds: sortIds(owners.ownerIds),
+    ownerNames: sortNames(owners.ownerNames),
+    companyOwner: cut(action.hbfOwner, 120),
+    groupId: inGroup ? action.groupId! : null,
     due: action.due && /^\d{4}-\d{2}-\d{2}$/.test(action.due) ? action.due : null,
     note,
     removed: Boolean(action.removed),
@@ -165,37 +317,35 @@ export function fromBoard(task: Task, side: BoardSide): Shape {
     status: task.status,
     priority: task.priority,
     ownerIds: sortIds(task.ownerIds),
+    ownerNames: sortNames(task.ownerNames),
+    companyOwner: task.companyOwner,
+    groupId: groupIdFor(task.projectId, side),
     due: task.due,
     note: task.note,
     removed: task.removed,
   };
 }
 
-/** The fields to write to the artifact for a board Task. Owners without a team board id are left out. */
+/**
+ * The fields to write to the artifact for a board Task. Owners the artifact has no user id for go
+ * as typed names; the artifact's own Owners the board doesn't know stay where they are.
+ */
 export function toTeamBoard(task: Task, snapshot: TeamBoardSnapshot, side: BoardSide, existing?: TeamBoardAction): Record<string, unknown> {
+  const people = new People(side.people);
   const byEmail = new Map(Object.entries(snapshot.config.people).map(([u, email]) => [email.toLowerCase(), u]));
-  const company = side.companies.find((c) => c.id === task.companyId);
-  const projectId =
-    existing && snapshot.config.projects[existing.projectId]?.toLowerCase() === company?.name.toLowerCase()
-      ? existing.projectId
-      : (snapshot.config.newTaskProject[company?.name ?? ""] ?? existing?.projectId ?? "");
-  const area = side.areas.find((a) => a.id === task.areaId);
-  const areaCategory = area
-    ? Object.entries(snapshot.categories).find(
-        ([, c]) =>
-          c.parentId === `d-${task.departmentId}` &&
-          c.name.toLowerCase() === area.name.toLowerCase() &&
-          (!c.projectId || snapshot.config.projects[c.projectId]?.toLowerCase() === company?.name.toLowerCase()),
-      )?.[0]
-    : undefined;
+  const unknownOnTeamBoard = (existing?.ownerIds ?? []).filter((u) => !people.get(snapshot.config.people[u]?.toLowerCase() ?? ""));
+  const ownerIds = [...unknownOnTeamBoard, ...task.ownerIds.map((id) => byEmail.get(id.toLowerCase())).filter((u): u is string => Boolean(u))];
+  const namedOnly = task.ownerIds.filter((id) => !byEmail.has(id.toLowerCase())).map((id) => people.name(id));
   const fields: Record<string, unknown> = {
     title: task.title,
     status: task.status,
     priority: task.priority,
-    projectId,
-    categoryId: areaCategory ?? `d-${task.departmentId}`,
+    ...placeOnTeamBoard(task, snapshot, side, existing?.projectId),
+    groupId: groupIdFor(task.projectId, side) ?? "",
     due: task.due ?? "",
-    ownerIds: task.ownerIds.map((id) => byEmail.get(id.toLowerCase())).filter(Boolean),
+    ownerIds: [...new Set(ownerIds)],
+    ownerNames: [...namedOnly, ...task.ownerNames],
+    hbfOwner: task.companyOwner,
     removed: task.removed,
   };
   // A Blocked Task's note is what it waits on; the artifact keeps that apart from its note.
@@ -204,7 +354,7 @@ export function toTeamBoard(task: Task, snapshot: TeamBoardSnapshot, side: Board
   return fields;
 }
 
-const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "due", "note", "home", "removed"];
+const FIELDS: Field[] = ["title", "status", "priority", "ownerIds", "ownerNames", "companyOwner", "project", "due", "note", "home", "removed"];
 
 function same(a: Shape, b: Shape, field: Field): boolean {
   switch (field) {
@@ -212,8 +362,161 @@ function same(a: Shape, b: Shape, field: Field): boolean {
       return a.departmentId === b.departmentId && (a.areaName ?? "").toLowerCase() === (b.areaName ?? "").toLowerCase();
     case "ownerIds":
       return a.ownerIds.join(",") === b.ownerIds.join(",");
+    case "ownerNames":
+      return lower(a.ownerNames) === lower(b.ownerNames);
+    case "project":
+      return a.groupId === b.groupId;
     default:
       return a[field] === b[field];
+  }
+}
+
+// ---------- Projects ----------
+
+export function projectFromTeamBoard(group: TeamBoardGroup, snapshot: TeamBoardSnapshot, side: BoardSide): ProjectShape | string {
+  const company = companyFor(group.projectId, snapshot, side);
+  if (!company) return "Its project has no Company on the board.";
+  const people = new People(side.people);
+  const owner = ownersOf(knownEmails(group.ownerId ? [group.ownerId] : [], snapshot, people), group.ownerName ? [group.ownerName] : [], people);
+  return {
+    companyId: company.id,
+    ...homeOf(group.categoryId, snapshot),
+    name: cut(group.name, 80) || "Untitled Project from the team board",
+    goal: cut(group.note, 300),
+    ownerId: owner.ownerIds[0] ?? null,
+    ownerName: owner.ownerIds.length ? "" : (owner.ownerNames[0] ?? ""),
+    phase: (PHASES as readonly string[]).includes(group.phase ?? "") ? (group.phase as Phase) : null,
+    repository: cut(group.repository, 400),
+    portalApp: cut(group.portalApp, 64).toLowerCase(),
+    liveUrl: /^https:\/\//.test(group.liveUrl ?? "") ? cut(group.liveUrl, 400) : "",
+    order: typeof group.order === "number" && Number.isFinite(group.order) ? Math.round(group.order) : 0,
+    removed: Boolean(group.removed),
+  };
+}
+
+export function projectFromBoard(project: Project, side: BoardSide): ProjectShape {
+  return {
+    companyId: project.companyId,
+    departmentId: project.departmentId,
+    areaName: side.areas.find((a) => a.id === project.areaId)?.name ?? null,
+    name: project.name,
+    goal: project.goal,
+    ownerId: project.ownerId,
+    ownerName: project.ownerName,
+    phase: project.phase,
+    repository: project.repository,
+    portalApp: project.portalApp,
+    liveUrl: project.liveUrl,
+    order: project.order,
+    removed: project.removed,
+  };
+}
+
+export function projectToTeamBoard(project: Project, snapshot: TeamBoardSnapshot, side: BoardSide, existing?: TeamBoardGroup): Record<string, unknown> {
+  const people = new People(side.people);
+  const byEmail = new Map(Object.entries(snapshot.config.people).map(([u, email]) => [email.toLowerCase(), u]));
+  const ownerId = project.ownerId ? byEmail.get(project.ownerId.toLowerCase()) : undefined;
+  const place = placeOnTeamBoard(project, snapshot, side, existing?.projectId);
+  return {
+    name: project.name,
+    note: project.goal,
+    projectId: place.projectId,
+    categoryId: place.categoryId,
+    order: project.order,
+    ownerId: ownerId ?? "",
+    // An Owner the artifact has no user id for goes by name.
+    ownerName: project.ownerId && !ownerId ? people.name(project.ownerId) : project.ownerName,
+    phase: project.phase ?? "",
+    repository: project.repository,
+    portalApp: project.portalApp,
+    liveUrl: project.liveUrl,
+    removed: project.removed,
+  };
+}
+
+const PROJECT_FIELDS: ProjectField[] = ["name", "goal", "owner", "phase", "repository", "portalApp", "liveUrl", "order", "home", "removed"];
+
+function sameProject(a: ProjectShape, b: ProjectShape, field: ProjectField): boolean {
+  switch (field) {
+    case "home":
+      return a.departmentId === b.departmentId && (a.areaName ?? "").toLowerCase() === (b.areaName ?? "").toLowerCase();
+    case "owner":
+      return a.ownerId === b.ownerId && a.ownerName.toLowerCase() === b.ownerName.toLowerCase();
+    default:
+      return a[field] === b[field];
+  }
+}
+
+/** An Update and a log line are the same news when they were written at the same moment with the same words. */
+const newsKey = (at: string, text: string) => `${new Date(at).toISOString()}|${text.trim()}`;
+
+function planProjects(snapshot: TeamBoardSnapshot, side: BoardSide, now: string, plan: SyncPlan): void {
+  const byId = new Map(side.projects.map((p) => [p.id, p]));
+  const linked = new Set<string>();
+  const edited = { editedAt: now, editedBy: snapshot.config.syncAs };
+  const byEmail = new Map(Object.entries(snapshot.config.people).map(([u, email]) => [email.toLowerCase(), u]));
+
+  for (const [groupId, group] of Object.entries(snapshot.groups ?? {})) {
+    const projectId = side.links.projects.get(groupId) ?? boardIdFromArtifactId(groupId);
+    const project = projectId ? byId.get(projectId) : undefined;
+    if (projectId) linked.add(projectId);
+    const shape = projectFromTeamBoard(group, snapshot, side);
+    if (typeof shape === "string") {
+      plan.skipped.push({ side: "board", id: groupId, reason: shape });
+      continue;
+    }
+    const log = (group.log ?? []).filter((e) => e && typeof e.text === "string" && e.text.trim() && !Number.isNaN(Date.parse(e.at)));
+    if (!project) {
+      if (group.removed || boardIdFromArtifactId(groupId)) continue;
+      plan.projects.push({ kind: "create", groupId, shape, updates: log });
+      continue;
+    }
+    if (shape.companyId !== project.companyId) {
+      plan.skipped.push({ side: "board", id: groupId, reason: "It is in a different Company on each side; move it on one side." });
+      continue;
+    }
+
+    // Updates are news: both sides keep every line either side wrote.
+    const onBoard = side.updates.filter((u) => u.projectId === project.id);
+    const boardKeys = new Set(onBoard.map((u) => newsKey(u.at, u.text)));
+    const teamKeys = new Set(log.map((e) => newsKey(e.at, e.text)));
+    const newOnTeamBoard = log.filter((e) => !boardKeys.has(newsKey(e.at, e.text)));
+    const newOnBoard = onBoard.filter((u) => !teamKeys.has(newsKey(u.at, u.text)));
+
+    const roundTrip = projectFromTeamBoard({ ...group, ...projectToTeamBoard(project, snapshot, side, group) } as TeamBoardGroup, snapshot, side);
+    const differing = typeof roundTrip === "string" ? [] : PROJECT_FIELDS.filter((f) => !sameProject(shape, roundTrip, f));
+    const teamBoardWins = (group.editedAt ?? group.createdAt ?? "") > project.updatedAt;
+    if (differing.length && teamBoardWins) {
+      plan.projects.push({ kind: "update", groupId, projectId: project.id, shape, fields: differing, updates: newOnTeamBoard });
+    } else if (newOnTeamBoard.length) {
+      plan.projects.push({ kind: "update", groupId, projectId: project.id, shape, fields: [], updates: newOnTeamBoard });
+    }
+    const data: Record<string, unknown> = differing.length && !teamBoardWins ? { ...projectToTeamBoard(project, snapshot, side, group) } : {};
+    if (newOnBoard.length) {
+      const lines = newOnBoard.map((u) => ({ at: u.at, by: (u.by && byEmail.get(u.by)) || snapshot.config.syncAs, byName: u.byName, text: u.text }));
+      data.log = [...(group.log ?? []), ...lines].sort((a, b) => a.at.localeCompare(b.at)).slice(-LOG_KEEP);
+    }
+    if (Object.keys(data).length) plan.artifact.push({ op: "update", collection: "groups", doc_id: groupId, data: { ...data, ...edited } });
+  }
+
+  // Projects added on the board go to the team board.
+  for (const project of side.projects) {
+    if (linked.has(project.id) || project.removed) continue;
+    const company = side.companies.find((c) => c.id === project.companyId);
+    if (!company || !snapshot.config.newTaskProject[company.name]) {
+      plan.skipped.push({ side: "team board", id: project.id, reason: "Its Company has no project on the team board." });
+      continue;
+    }
+    const log = side.updates
+      .filter((u) => u.projectId === project.id)
+      .map((u) => ({ at: u.at, by: (u.by && byEmail.get(u.by)) || snapshot.config.syncAs, byName: u.byName, text: u.text }))
+      .slice(-LOG_KEEP);
+    plan.artifact.push({
+      op: "set",
+      collection: "groups",
+      doc_id: artifactIdFor(project.id),
+      data: { ...projectToTeamBoard(project, snapshot, side), log, createdAt: project.createdAt, createdBy: snapshot.config.syncAs, history: [], ...edited },
+    });
   }
 }
 
@@ -221,27 +524,29 @@ function same(a: Shape, b: Shape, field: Field): boolean {
  * Decides what to change on each side. Both sides are compared in the board's terms, after a round
  * trip, so a value one side can't hold (a ninth word, a third line, an owner the artifact doesn't know)
  * never counts as a change. Where they differ, the side changed more recently wins, for the whole Task.
+ * A Task with no Owner stays without one: nobody stands in (ADR 0009).
  */
 export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: string): SyncPlan {
-  const plan: SyncPlan = { board: [], artifact: [], skipped: [] };
-  const fallbackOwner = snapshot.config.people[snapshot.config.syncAs]?.toLowerCase();
-  if (!fallbackOwner) throw new Error("The sync config's syncAs has no email in people.");
+  const plan: SyncPlan = { projects: [], board: [], artifact: [], skipped: [] };
+  if (!snapshot.config.people[snapshot.config.syncAs]) throw new Error("The sync config's syncAs has no email in people.");
+  planProjects(snapshot, side, now, plan);
+
   const tasksById = new Map(side.tasks.map((t) => [t.id, t]));
   const linkedTaskIds = new Set<string>();
   const edited = { editedAt: now, editedBy: snapshot.config.syncAs };
 
   for (const [id, action] of Object.entries(snapshot.actions)) {
-    const taskId = side.links.get(id) ?? taskIdFromArtifactId(id);
+    const taskId = side.links.tasks.get(id) ?? boardIdFromArtifactId(id);
     const task = taskId ? tasksById.get(taskId) : undefined;
     if (taskId) linkedTaskIds.add(taskId);
-    const shape = fromTeamBoard(action, snapshot, side, fallbackOwner);
+    const shape = fromTeamBoard(action, snapshot, side);
     if (typeof shape === "string") {
       plan.skipped.push({ side: "board", id, reason: shape });
       continue;
     }
     if (!task) {
       // Removed on the team board before it was ever synced, or a board Task that no longer exists.
-      if (action.removed || taskIdFromArtifactId(id)) continue;
+      if (action.removed || boardIdFromArtifactId(id)) continue;
       plan.board.push({ kind: "create", teamBoardId: id, shape, documents: documentsFor(id, snapshot) });
       continue;
     }
@@ -249,31 +554,31 @@ export function planSync(snapshot: TeamBoardSnapshot, side: BoardSide, now: stri
       plan.skipped.push({ side: "board", id, reason: "It is in a different Company on each side; move it on one side." });
       continue;
     }
-    const boardShape = fromBoard(task, side);
+    // A stand-in Owner is not an Owner: the team board's Owners replace it, whichever side changed last,
+    // and it never goes to the team board.
+    const standIn =
+      (side.standIns?.has(task.id) ?? false) && (shape.ownerIds.join() !== task.ownerIds.join() || shape.ownerNames.length > 0);
+    const current: Task = standIn ? { ...task, ownerIds: shape.ownerIds, ownerNames: shape.ownerNames } : task;
+    const boardShape = fromBoard(current, side);
     // The board's value as the artifact would hold it, read back.
-    const roundTrip = fromTeamBoard({ ...action, ...toTeamBoard(task, snapshot, side, action) } as TeamBoardAction, snapshot, side, fallbackOwner);
+    const roundTrip = fromTeamBoard({ ...action, ...toTeamBoard(current, snapshot, side, action) } as TeamBoardAction, snapshot, side);
     if (typeof roundTrip === "string") continue;
     const differing = FIELDS.filter((f) => !same(shape, roundTrip, f));
-    if (!differing.length) continue;
+    const release: Field[] = standIn ? ["ownerIds", "ownerNames"] : [];
     const teamBoardTime = action.editedAt ?? action.createdAt ?? "";
-    // The syncing Member stands in as Owner until the team board's Owners sign in; a stand-in never wins.
-    const standIn = boardShape.ownerIds.join(",") === fallbackOwner && !shape.ownerIds.includes(fallbackOwner);
-    const update = (fields: Field[]): BoardOp => ({
-      kind: "update",
-      teamBoardId: id,
-      taskId: task.id,
-      shape: { ...shape, ownerIds: keepUnknownOwners(shape, boardShape, snapshot) },
-      fields,
-    });
-    if (teamBoardTime > task.updatedAt) {
-      plan.board.push(update(differing));
+    if (differing.length && teamBoardTime > task.updatedAt) {
+      plan.board.push({
+        kind: "update",
+        teamBoardId: id,
+        taskId: task.id,
+        shape: { ...shape, ownerIds: keepUnknownOwners(shape, boardShape, snapshot) },
+        fields: [...new Set([...differing, ...release])],
+      });
       continue;
     }
-    if (standIn && differing.includes("ownerIds")) plan.board.push(update(["ownerIds"]));
-    if (standIn && differing.length === 1 && differing[0] === "ownerIds") continue;
-    const data: Record<string, unknown> = { ...toTeamBoard(task, snapshot, side, action), ...edited };
-    if (standIn) delete data.ownerIds;
-    plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data });
+    if (standIn) plan.board.push({ kind: "update", teamBoardId: id, taskId: task.id, shape, fields: release });
+    if (!differing.length) continue;
+    plan.artifact.push({ op: "update", collection: "actions", doc_id: id, data: { ...toTeamBoard(current, snapshot, side, action), ...edited } });
   }
 
   // Tasks added on the board go to the team board.

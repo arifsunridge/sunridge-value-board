@@ -6,7 +6,7 @@ The shared language of the Value Creation and Investment team for tracking wheth
 
 **Company**:
 A business whose work is tracked on the board: a portfolio company, or Sunridge itself for internal work.
-_Avoid_: Project, portco, client, entity
+_Avoid_: portco, client, entity
 
 **Department**:
 One of six standard functions shared by every Company: Strategic planning, Sales & distribution, Operations, Talent & organisation, Innovation & efficiency, Finance.
@@ -17,8 +17,24 @@ A named slice of one Department inside one Company, such as HBF â€º Operations â
 _Avoid_: Sub-category, sub-department, team, stream
 
 **Home**:
-The single Company and Department a Task belongs to, plus at most one Area. Work that spans two Areas lives in the Area that owns the result. Work that spans Companies becomes one Sunridge Task or one Task per Company.
+The single Company and Department a Task or Project belongs to, plus at most one Area. Work that spans two Areas lives in the Area that owns the result. Work that spans Companies becomes one Sunridge Task or one Task per Company.
 _Avoid_: Location, bucket, parent
+
+**Project**:
+A named piece of work in one Home, with a goal, one Owner and a Phase, that groups the Tasks in that Home which serve it, such as an HBF app or a line repair programme. A Task is in at most one Project, and putting it in one moves it to the Project's Home.
+_Avoid_: Group, workstream, initiative, programme, epic
+
+**Phase**:
+Where a Project stands: Idea, Building, Live or Paused.
+_Avoid_: Stage, status (Status is for Tasks), state
+
+**Progress**:
+A Project's Done Tasks out of all its Tasks, leaving out removed ones. Worked out, never typed in.
+_Avoid_: Completion, percentage, score
+
+**Update**:
+A dated line of news on a Project, such as what was finished or decided. Like the Trail, an Update is never changed or deleted.
+_Avoid_: Log, comment, note (a note belongs to a Task), history
 
 ## Work
 
@@ -66,11 +82,11 @@ _Avoid_: Draft task, candidate, proposal, AI task
 ## People
 
 **Person**:
-Anyone who can sign in to the board: a Member, or someone in a Company team.
+Anyone the HBF Portal lets into the board: a Member, or someone in a Company team. A Person is on the board before they first sign in.
 _Avoid_: User, account
 
 **Member**:
-A Sunridge employee who signs in. Members see every Task of every Company. In the HBF Portal their role is **Sunridge team**.
+A Sunridge employee on the board. Members see every Task of every Company. In the HBF Portal their role is **Sunridge team**.
 _Avoid_: User, account, team member, guest
 
 **Company team**:
@@ -78,8 +94,12 @@ The people at a portfolio company whom a portal admin has let into that Company'
 _Avoid_: Manager, guest, client, external user, company staff
 
 **Owner**:
-A Person accountable for a Task. Every Task has at least one Owner who is a Member, and can have several. Someone in a Company team can own only a Shared Task in their own Company.
+Someone accountable for a Task: a Person, or a name typed for anyone who isn't on the board. A Task can have several Owners, or none yet ("Needs an owner"). Someone in a Company team can own only a Shared Task in their own Company. While none of a Task's Owners has signed in, any Member may change it. A Project has one Owner.
 _Avoid_: Assignee, lead, responsible, DRI
+
+**Company owner**:
+The person at the portfolio company who answers for a Task, by name, such as an HBF manager. It gives them no access and no rights on the board.
+_Avoid_: HBF owner, client owner, contact
 
 **Contributor**:
 A Person who helps on a Task without being accountable for it. Contributors can change the Task and its Documents, just as Owners can. Someone in a Company team can contribute only to a Shared Task in their own Company.
@@ -97,4 +117,4 @@ _Avoid_: Goal (reserved for later), KPI, objective, budget
 
 **Lever**:
 A named initiative expected to add a $ amount per month towards one Target. A Task supports at most one Lever, and many Tasks never support one.
-_Avoid_: Workstream, initiative, project, programme, value driver
+_Avoid_: Workstream, initiative, programme, value driver

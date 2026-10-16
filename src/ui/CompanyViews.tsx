@@ -4,6 +4,7 @@ import type { Company } from "@/board/model";
 const VIEWS = [
   { slug: "", label: "Board" },
   { slug: "/summary", label: "Summary" },
+  { slug: "/projects", label: "Projects" },
   { slug: "/capture", label: "Capture" },
   { slug: "/areas", label: "Areas" },
 ] as const;
@@ -17,11 +18,11 @@ export function CompanyHead({
 }: {
   company: Pick<Company, "id" | "name" | "kind">;
   current: (typeof VIEWS)[number]["slug"];
-  /** Capture and Areas are for Members only (ADR 0005). */
+  /** Capture and Areas are for Members only (ADR 0005). The Company team sees Projects through its Shared Tasks (ADR 0008). */
   isCompanyTeam?: boolean;
   children?: React.ReactNode;
 }) {
-  const views = isCompanyTeam ? VIEWS.filter((v) => v.slug === "" || v.slug === "/summary") : VIEWS;
+  const views = isCompanyTeam ? VIEWS.filter((v) => v.slug === "" || v.slug === "/summary" || v.slug === "/projects") : VIEWS;
   return (
     <>
       <div className="co-head">
